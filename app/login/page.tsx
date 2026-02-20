@@ -1,4 +1,6 @@
+import { Suspense } from "react";
 import { LoginForm } from "@/components/auth/login-form";
+
 
 export default function LoginPage() {
   return (
@@ -8,9 +10,11 @@ export default function LoginPage() {
           <h1 className="text-2xl font-semibold">HairBook</h1>
           <p className="text-sm text-muted-foreground">Accede al panel de tu peluquería</p>
         </div>
-        <LoginForm />
+        <Suspense fallback={<div>Cargando…</div>}>
+          <LoginForm />
+        </Suspense>
         <p className="mt-6 text-center text-xs text-muted-foreground">
-          Usuario demo: <span className="font-mono">admin@hairbook.local</span> · contraseña:{" "}
+        
           <span className="font-mono">admin1234</span>
         </p>
       </div>
