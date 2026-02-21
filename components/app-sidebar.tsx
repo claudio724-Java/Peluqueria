@@ -59,17 +59,6 @@ export function AppSidebar() {
           })}
         </ul>
       </nav>
-      <div className="border-t border-sidebar-border p-4">
-        <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-sidebar-accent text-sm font-semibold text-sidebar-accent-foreground">
-            AD
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-sidebar-foreground truncate">Admin</p>
-            <p className="text-xs text-sidebar-foreground/60 truncate">admin@salonpro.es</p>
-          </div>
-        </div>
-      </div>
     </aside>
   )
 }

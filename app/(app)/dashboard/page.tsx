@@ -18,6 +18,7 @@ const TZ = "Atlantic/Canary";
 
 export default function DashboardPage() {
   const [appointments, setAppointments] = useState<Cita[]>([]);
+  
   const [loading, setLoading] = useState(true);
 
   async function load() {

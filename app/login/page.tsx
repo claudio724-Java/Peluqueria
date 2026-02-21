@@ -9,10 +9,7 @@ export default function LoginPage() {
           <p className="text-sm text-muted-foreground">Accede al panel de tu peluquería</p>
         </div>
         <LoginForm />
-        <p className="mt-6 text-center text-xs text-muted-foreground">
-          Usuario demo: <span className="font-mono">admin@hairbook.local</span> · contraseña:{" "}
-          <span className="font-mono">admin1234</span>
-        </p>
+        
       </div>
     </div>
   );

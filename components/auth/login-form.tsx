@@ -64,6 +64,7 @@ export function LoginForm() {
           </div>
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
         </CardContent>
+        <br />
         <CardFooter>
           <Button className="w-full" type="submit" disabled={loading}>
             {loading ? "Entrando..." : "Entrar"}

@@ -40,6 +40,7 @@ npm run prisma:studio
 - `GET /api/appointments?salonId=...&from=ISO&to=ISO`
 - `POST /api/appointments`
 - `GET /api/appointments/:id`
+
 - `PATCH /api/appointments/:id`
 - `POST /api/appointments/:id/cancel`
 - `GET /api/availability?salonId=...&serviceId=...&date=YYYY-MM-DD&staffId=...`
