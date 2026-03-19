@@ -1,6 +1,14 @@
-import type { AppointmentStatus, Cita, Cliente, Empleado, Servicio } from "@/lib/types";
+import type { AppointmentStatus, Cita, Cliente, Empleado, PagoCita, Servicio } from "@/lib/types";
 import { formatInTimeZone } from "date-fns-tz";
 
+type ApiPayment = {
+  id: string;
+  status: "PENDING" | "PAID" | "EXPIRED" | "FAILED" | "CANCELED";
+  amountCents: number;
+  currency: string;
+  providerCheckoutUrl: string | null;
+  paidAt: string | null;
+};
 
 type ApiAppointment = {
   id: string;
@@ -8,9 +16,10 @@ type ApiAppointment = {
   endAt: string;
   status: "PENDING" | "CONFIRMED" | "CANCELED" | "NO_SHOW" | "COMPLETED";
   notes: string | null;
-  customer: { id: string; name: string; phone: string; };
-  service: { id: string; name: string; durationMin: number; priceCents: number; bufferMin: number; };
-  staff: { id: string; name: string; } | null;
+  customer: { id: string; name: string; phone: string };
+  service: { id: string; name: string; durationMin: number; priceCents: number; bufferMin: number };
+  staff: { id: string; name: string } | null;
+  payments?: ApiPayment[];
 };
 
 export function mapStatus(s: ApiAppointment["status"]): AppointmentStatus {
@@ -30,6 +39,21 @@ export function mapStatus(s: ApiAppointment["status"]): AppointmentStatus {
   }
 }
 
+function mapPaymentStatus(status: ApiPayment["status"]): PagoCita["estado"] {
+  switch (status) {
+    case "PAID":
+      return "pagado";
+    case "EXPIRED":
+      return "caducado";
+    case "FAILED":
+      return "fallido";
+    case "CANCELED":
+      return "cancelado";
+    default:
+      return "pendiente";
+  }
+}
+
 export function mapAppointmentToCita(a: ApiAppointment): Cita {
   const TZ = "Atlantic/Canary";
 
@@ -39,10 +63,7 @@ export function mapAppointmentToCita(a: ApiAppointment): Cita {
   const fecha = formatInTimeZone(start, TZ, "yyyy-MM-dd");
   const hora = formatInTimeZone(start, TZ, "HH:mm");
 
-  const duracion = Math.max(
-    0,
-    Math.round((end.getTime() - start.getTime()) / 60000)
-  );
+  const duracion = Math.max(0, Math.round((end.getTime() - start.getTime()) / 60000));
 
   const cliente: Cliente = {
     id: a.customer.id,
@@ -68,13 +89,25 @@ export function mapAppointmentToCita(a: ApiAppointment): Cita {
   const empleado: Empleado = {
     id: a.staff?.id ?? "sin-empleado",
     nombre: a.staff?.name ?? "Sin asignar",
-    especialidad: "",
     telefono: "",
     email: "",
+    rol: "",
+    especialidad: "",
     horario: [],
     activo: true,
   };
 
+  const latestPayment = a.payments?.[0];
+  const pago: PagoCita | null = latestPayment
+    ? {
+        id: latestPayment.id,
+        estado: mapPaymentStatus(latestPayment.status),
+        importe: Math.round(latestPayment.amountCents / 100),
+        moneda: latestPayment.currency,
+        urlCheckout: latestPayment.providerCheckoutUrl ?? undefined,
+        pagadoEn: latestPayment.paidAt ?? undefined,
+      }
+    : null;
 
   return {
     id: a.id,
@@ -87,5 +120,6 @@ export function mapAppointmentToCita(a: ApiAppointment): Cita {
     estado: mapStatus(a.status),
     notas: a.notes ?? "",
     precio: Math.round(a.service.priceCents / 100),
+    pago,
   };
 }

@@ -40,10 +40,13 @@ npm run prisma:studio
 - `GET /api/appointments?salonId=...&from=ISO&to=ISO`
 - `POST /api/appointments`
 - `GET /api/appointments/:id`
-
 - `PATCH /api/appointments/:id`
 - `POST /api/appointments/:id/cancel`
 - `GET /api/availability?salonId=...&serviceId=...&date=YYYY-MM-DD&staffId=...`
+- `GET /api/payments`
+- `POST /api/payments`
+- `GET /api/payments/:id`
+- `POST /api/webhooks/stripe`
 
 ### Webhook para Make
 
@@ -58,4 +61,16 @@ Intents soportados:
 - `check_availability`
 - `create_appointment`
 - `cancel_appointment`
+- `create_payment_link`
+- `get_payment_status`
 
+
+
+## Pago por WhatsApp con Make + Stripe
+
+1. Make recibe el mensaje de WhatsApp.
+2. Make llama a `POST /api/webhooks/make` con `intent=create_payment_link`.
+3. El backend crea un `Payment`, crea una Checkout Session en Stripe y devuelve `url` + `whatsappText`.
+4. Make responde en WhatsApp con ese texto.
+5. Stripe llama a `POST /api/webhooks/stripe` cuando el pago se completa o expira.
+6. Make puede consultar `intent=get_payment_status` para confirmar el resultado.

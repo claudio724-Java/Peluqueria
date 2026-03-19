@@ -37,6 +37,19 @@ enum MessageStatus {
   FAILED
 }
 
+enum PaymentProvider {
+  STRIPE
+  MANUAL
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  EXPIRED
+  FAILED
+  CANCELED
+}
+
 
 model User {
   id           String   @id @default(cuid())
@@ -72,6 +85,7 @@ model Salon {
   webhookKeys  WebhookClient[]
   users       User[]
   messageLogs MessageLog[]
+  payments    Payment[]
 }
 
 model Service {
@@ -187,6 +201,7 @@ model Appointment {
   customer Customer @relation(fields: [customerId], references: [id])
 
   cancellation Cancellation?
+  payments     Payment[]
 
   @@index([salonId, startAt])
   @@index([staffId, startAt])
@@ -220,6 +235,35 @@ model WaitlistEntry {
 
   @@index([salonId, isActive])
   @@index([customerId])
+}
+
+model Payment {
+  id                  String          @id @default(cuid())
+  salonId             String
+  appointmentId       String?
+  provider            PaymentProvider @default(STRIPE)
+  status              PaymentStatus   @default(PENDING)
+  amountCents         Int
+  currency            String          @default("EUR")
+  description         String?
+  customerName        String?
+  customerPhone       String?
+  customerEmail       String?
+  providerPaymentId   String?
+  providerCheckoutUrl String?
+  paidAt              DateTime?
+  expiresAt           DateTime?
+  metadata            Json?
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+
+  salon       Salon        @relation(fields: [salonId], references: [id], onDelete: Cascade)
+  appointment Appointment? @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+
+  @@index([salonId, createdAt])
+  @@index([appointmentId])
+  @@index([provider, providerPaymentId])
+  @@index([status, createdAt])
 }
 
 model MessageLog {

@@ -29,9 +29,27 @@ function statusLabel(s: Cita["estado"]) {
   }
 }
 
+function paymentLabel(cita: Cita) {
+  switch (cita.pago?.estado) {
+    case "pagado":
+      return "PAGADO";
+    case "caducado":
+      return "CADUCADO";
+    case "fallido":
+      return "FALLIDO";
+    case "cancelado":
+      return "CANCELADO";
+    case "pendiente":
+      return "PENDIENTE";
+    default:
+      return "SIN LINK";
+  }
+}
+
 export default function CitasPage() {
   const [items, setItems] = useState<Cita[]>([]);
   const [loading, setLoading] = useState(true);
+  const [creatingPaymentFor, setCreatingPaymentFor] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
@@ -51,9 +69,26 @@ export default function CitasPage() {
     await load();
   }
 
+  async function createPaymentLink(cita: Cita) {
+    try {
+      setCreatingPaymentFor(cita.id);
+      const res = await apiPost<{ ok: true; item: { providerCheckoutUrl: string | null } }>("/api/payments", {
+        appointmentId: cita.id,
+      });
+
+      if (res.item.providerCheckoutUrl) {
+        window.open(res.item.providerCheckoutUrl, "_blank", "noopener,noreferrer");
+      }
+
+      await load();
+    } finally {
+      setCreatingPaymentFor(null);
+    }
+  }
+
   return (
     <div className="space-y-6 p-6">
-      <AppHeader title="Citas" subtitle={loading ? "Cargando..." : "Gestiona las citas"} />
+      <AppHeader title="Citas" subtitle={loading ? "Cargando..." : "Gestiona las citas y sus cobros"} />
 
       <Card>
         <CardContent className="p-0">
@@ -66,6 +101,7 @@ export default function CitasPage() {
                 <TableHead>Servicio</TableHead>
                 <TableHead>Empleado</TableHead>
                 <TableHead>Estado</TableHead>
+                <TableHead>Pago</TableHead>
                 <TableHead className="text-right">Acciones</TableHead>
               </TableRow>
             </TableHeader>
@@ -82,16 +118,29 @@ export default function CitasPage() {
                       {statusLabel(a.estado)}
                     </Badge>
                   </TableCell>
+                  <TableCell>
+                    <Badge variant={a.pago?.estado === "pagado" ? "default" : "secondary"}>{paymentLabel(a)}</Badge>
+                  </TableCell>
                   <TableCell className="text-right">
-                    <Button size="sm" variant="outline" onClick={() => cancel(a.id)} disabled={a.estado === "cancelada"}>
-                      Cancelar
-                    </Button>
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => createPaymentLink(a)}
+                        disabled={creatingPaymentFor === a.id || a.pago?.estado === "pagado" || a.estado === "cancelada"}
+                      >
+                        {creatingPaymentFor === a.id ? "Creando..." : a.pago?.urlCheckout ? "Abrir cobro" : "Crear cobro"}
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => cancel(a.id)} disabled={a.estado === "cancelada"}>
+                        Cancelar
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
               {items.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center text-sm text-muted-foreground py-10">
+                  <TableCell colSpan={8} className="py-10 text-center text-sm text-muted-foreground">
                     No hay citas.
                   </TableCell>
                 </TableRow>

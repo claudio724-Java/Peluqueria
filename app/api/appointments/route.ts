@@ -7,6 +7,25 @@ function jsonError(message: string, status = 400, details?: unknown) {
   return NextResponse.json({ ok: false, error: message, details }, { status });
 }
 
+const appointmentInclude = {
+  customer: { select: { id: true, name: true, phone: true } },
+  service: { select: { id: true, name: true, durationMin: true, bufferMin: true, priceCents: true } },
+  staff: { select: { id: true, name: true } },
+  cancellation: true,
+  payments: {
+    orderBy: { createdAt: "desc" as const },
+    take: 1,
+    select: {
+      id: true,
+      status: true,
+      amountCents: true,
+      currency: true,
+      providerCheckoutUrl: true,
+      paidAt: true,
+    },
+  },
+};
+
 export async function GET(req: NextRequest) {
   const { session, response } = await requireSession();
   if (response) return response;
@@ -28,12 +47,7 @@ export async function GET(req: NextRequest) {
   const items = await prisma.appointment.findMany({
     where,
     orderBy: { startAt: "asc" },
-    include: {
-      customer: { select: { id: true, name: true, phone: true } },
-      service: { select: { id: true, name: true, durationMin: true, bufferMin: true, priceCents: true } },
-      staff: { select: { id: true, name: true } },
-      cancellation: true,
-    },
+    include: appointmentInclude,
   });
 
   return NextResponse.json({ ok: true, items });
@@ -60,7 +74,6 @@ export async function POST(req: NextRequest) {
 
   if (!(computedEnd > start)) return jsonError("endAt must be after startAt");
 
-  // Upsert customer by phone within salon
   const existingCustomer = await prisma.customer.findFirst({ where: { salonId, phone: customer.phone } });
   const customerRow = existingCustomer
     ? await prisma.customer.update({
@@ -83,11 +96,9 @@ export async function POST(req: NextRequest) {
         },
       });
 
-  // Check staff belongs to salon
   const staff = await prisma.staff.findFirst({ where: { id: staffId, salonId, isActive: true } });
   if (!staff) return jsonError("Staff not found", 404);
 
-  // Prevent overlaps (PENDING/CONFIRMED)
   const conflict = await prisma.appointment.findFirst({
     where: {
       salonId,
@@ -112,11 +123,7 @@ export async function POST(req: NextRequest) {
       status: "CONFIRMED",
       notes: notes || null,
     },
-    include: {
-      customer: { select: { id: true, name: true, phone: true } },
-      service: { select: { id: true, name: true, durationMin: true, bufferMin: true, priceCents: true } },
-      staff: { select: { id: true, name: true } },
-    },
+    include: appointmentInclude,
   });
 
   return NextResponse.json({ ok: true, item: created }, { status: 201 });

@@ -6,18 +6,37 @@ function jsonError(message: string, status = 400, details?: unknown) {
   return NextResponse.json({ ok: false, error: message, details }, { status });
 }
 
+const appointmentInclude = {
+  customer: { select: { id: true, name: true, phone: true, email: true } },
+  service: { select: { id: true, name: true, durationMin: true, bufferMin: true, priceCents: true } },
+  staff: { select: { id: true, name: true } },
+  cancellation: true,
+  payments: {
+    orderBy: { createdAt: "desc" as const },
+    take: 5,
+    select: {
+      id: true,
+      status: true,
+      amountCents: true,
+      currency: true,
+      providerCheckoutUrl: true,
+      paidAt: true,
+      createdAt: true,
+    },
+  },
+};
+
 export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  const { session, response } = await requireSession();
+  if (response) return response;
+
+  const salonId = (session!.user as any).salonId;
   const { id } = await ctx.params;
+  if (!salonId) return jsonError("salonId missing on user/session", 400);
 
   const item = await prisma.appointment.findFirst({
-    where: { id: params.id, salonId },
-    where: { id },
-    include: {
-      customer: { select: { id: true, name: true, phone: true, email: true } },
-      service: { select: { id: true, name: true, durationMin: true, bufferMin: true, priceCents: true } },
-      staff: { select: { id: true, name: true } },
-      cancellation: true,
-    },
+    where: { id, salonId },
+    include: appointmentInclude,
   });
 
   if (!item) return jsonError("Not found", 404);
@@ -25,12 +44,16 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
 }
 
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  const { session, response } = await requireSession();
+  if (response) return response;
+
+  const salonId = (session!.user as any).salonId;
   const { id } = await ctx.params;
+  if (!salonId) return jsonError("salonId missing on user/session", 400);
+
   const body = await req.json().catch(() => null);
-
-  const existing = await prisma.appointment.findFirst({ where: { id: params.id, salonId } });
+  const existing = await prisma.appointment.findFirst({ where: { id, salonId } });
   if (!existing) return jsonError("Not found", 404);
-
 
   const allowed = {
     status: body?.status,
@@ -41,7 +64,6 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     notes: body?.notes,
   } as Record<string, unknown>;
 
-  // Minimal validation (MVP). Harden later.
   const data: any = {};
   if (typeof allowed.status === "string") data.status = allowed.status;
   if (typeof allowed.staffId === "string") data.staffId = allowed.staffId;
@@ -53,6 +75,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
   const updated = await prisma.appointment.update({
     where: { id },
     data,
+    include: appointmentInclude,
   }).catch(() => null);
 
   if (!updated) return jsonError("Not found", 404);

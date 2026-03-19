@@ -2,16 +2,33 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyWebhookSignature } from "@/lib/webhook";
 import { getAvailability } from "@/lib/availability";
 import { prisma } from "@/lib/prisma";
+import { createPaymentLink } from "@/lib/payments/service";
 
 function jsonError(message: string, status = 400, details?: unknown) {
   return NextResponse.json({ ok: false, error: message, details }, { status });
 }
 
+function paymentMessage(url: string, amountCents: number, currency: string) {
+  const amount = new Intl.NumberFormat("es-ES", {
+    style: "currency",
+    currency: currency.toUpperCase(),
+  }).format(amountCents / 100);
+
+  return `Aquí tienes tu enlace de pago: ${url}\nImporte: ${amount}`;
+}
+
 /**
  * Webhook pensado para Make:
  * - POST JSON
- * - Header: X-Signature: sha256=<hex>
- * - Secret: WEBHOOK_SECRET (env)
+ * - Header opcional: X-Signature: sha256=<hex>
+ * - Secret: WEBHOOK_SECRET
+ *
+ * Intents soportados:
+ * - check_availability
+ * - create_appointment
+ * - cancel_appointment
+ * - create_payment_link
+ * - get_payment_status
  */
 export async function POST(req: NextRequest) {
   const secret = process.env.WEBHOOK_SECRET;
@@ -36,19 +53,17 @@ export async function POST(req: NextRequest) {
   const intent = (payload as any).intent as string | undefined;
   if (!intent) return jsonError("Missing intent", 400);
 
-  // ---- intent: check_availability ----
   if (intent === "check_availability") {
     const salonId = (payload as any).salonId;
     const serviceId = (payload as any).serviceId;
     const staffId = (payload as any).staffId;
-    const date = (payload as any).date; // YYYY-MM-DD
+    const date = (payload as any).date;
     if (!salonId || !serviceId || !date) return jsonError("salonId, serviceId and date are required", 400);
 
     const slots = await getAvailability({ salonId, serviceId, staffId, date });
     return NextResponse.json({ ok: true, intent, slots });
   }
 
-  // ---- intent: create_appointment ----
   if (intent === "create_appointment") {
     const { salonId, serviceId, staffId, startAt, customer } = payload as any;
     if (!salonId || !serviceId || !staffId || !startAt || !customer?.name || !customer?.phone) {
@@ -112,7 +127,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, intent, appointmentId: created.id });
   }
 
-  // ---- intent: cancel_appointment ----
   if (intent === "cancel_appointment") {
     const appointmentId = (payload as any).appointmentId;
     const reason = (payload as any).reason;
@@ -132,6 +146,86 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json({ ok: true, intent, appointmentId });
+  }
+
+  if (intent === "create_payment_link") {
+    const salonId = (payload as any).salonId as string | undefined;
+    const appointmentId = (payload as any).appointmentId as string | undefined;
+    const amountCents = (payload as any).amountCents as number | undefined;
+    const currency = (payload as any).currency as string | undefined;
+    const customerName = (payload as any).customerName as string | undefined;
+    const customerPhone = (payload as any).customerPhone as string | undefined;
+    const customerEmail = (payload as any).customerEmail as string | undefined;
+    const description = (payload as any).description as string | undefined;
+
+    if (!salonId) return jsonError("salonId is required", 400);
+    if (!appointmentId && !amountCents) {
+      return jsonError("appointmentId or amountCents is required", 400);
+    }
+
+    try {
+      const payment = await createPaymentLink({
+        salonId,
+        appointmentId,
+        amountCents,
+        currency,
+        description,
+        customerName,
+        customerPhone,
+        customerEmail,
+        metadata: {
+          source: "make_whatsapp",
+          conversationId: (payload as any).conversationId,
+        },
+      });
+
+      if (!payment.providerCheckoutUrl) {
+        return jsonError("Stripe no devolvió URL de checkout", 502);
+      }
+
+      return NextResponse.json({
+        ok: true,
+        intent,
+        paymentId: payment.id,
+        appointmentId: payment.appointmentId,
+        amountCents: payment.amountCents,
+        currency: payment.currency,
+        url: payment.providerCheckoutUrl,
+        whatsappText: paymentMessage(payment.providerCheckoutUrl, payment.amountCents, payment.currency),
+      });
+    } catch (error) {
+      return jsonError(error instanceof Error ? error.message : "No se pudo crear el enlace de pago", 400);
+    }
+  }
+
+  if (intent === "get_payment_status") {
+    const paymentId = (payload as any).paymentId as string | undefined;
+    const appointmentId = (payload as any).appointmentId as string | undefined;
+    const salonId = (payload as any).salonId as string | undefined;
+
+    if (!paymentId && !(appointmentId && salonId)) {
+      return jsonError("paymentId or (appointmentId + salonId) is required", 400);
+    }
+
+    const payment = paymentId
+      ? await prisma.payment.findUnique({ where: { id: paymentId } })
+      : await prisma.payment.findFirst({
+          where: { appointmentId, salonId },
+          orderBy: { createdAt: "desc" },
+        });
+
+    if (!payment) return jsonError("Payment not found", 404);
+
+    return NextResponse.json({
+      ok: true,
+      intent,
+      paymentId: payment.id,
+      status: payment.status,
+      paidAt: payment.paidAt,
+      url: payment.providerCheckoutUrl,
+      amountCents: payment.amountCents,
+      currency: payment.currency,
+    });
   }
 
   return jsonError(`Unknown intent: ${intent}`, 400);

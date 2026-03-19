@@ -8,15 +8,19 @@ function jsonError(message: string, status = 400, details?: unknown) {
 }
 
 export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
+  const { session, response } = await requireSession();
+  if (response) return response;
+
+  const salonId = (session!.user as any).salonId;
   const { id } = await ctx.params;
+  if (!salonId) return jsonError("salonId missing on user/session", 400);
 
   const body = await req.json().catch(() => ({}));
   const parsed = AppointmentCancelSchema.safeParse(body);
   if (!parsed.success) return jsonError("Invalid payload", 400, parsed.error.flatten());
 
   const appt = await prisma.appointment.findFirst({
-    where: { id: params.id, salonId },
-    where: { id },
+    where: { id, salonId },
     include: {
       salon: { select: { id: true, name: true } },
       service: { select: { id: true, name: true } },
@@ -45,7 +49,6 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     },
   });
 
-  // MVP "relleno": devolver candidatos de waitlist (para que el frontend/Make mande mensajes)
   const waitlist = await prisma.waitlistEntry.findMany({
     where: {
       salonId: appt.salonId,
