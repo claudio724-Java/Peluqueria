@@ -323,5 +323,3 @@ export async function POST(req: NextRequest) {
   return jsonError(`Unknown intent: ${intent}`, 400);
 }
 
-  return jsonError(`Unknown intent: ${intent}`, 400);
-}
