@@ -49,15 +49,34 @@ export async function DELETE(_: NextRequest, { params }: Params) {
 
   const existing = await prisma.service.findFirst({
     where: { id, salonId },
+    include: {
+      appointments: {
+        select: { id: true },
+        take: 1,
+      },
+    },
   });
 
   if (!existing) {
     return NextResponse.json({ ok: false, error: "Service not found" }, { status: 404 });
   }
 
+  if (existing.appointments.length > 0) {
+    const disabled = await prisma.service.update({
+      where: { id },
+      data: { isActive: false },
+    });
+
+    return NextResponse.json({
+      ok: true,
+      softDeleted: true,
+      item: disabled,
+    });
+  }
+
   await prisma.service.delete({
     where: { id },
   });
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, deleted: true });
 }
