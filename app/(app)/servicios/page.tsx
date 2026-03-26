@@ -163,23 +163,23 @@ export default function ServiciosPage() {
     setDeleteOpen(true);
   }
 
-  async function handleDelete() {
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+    async function handleDelete() {
     if (!selected) return;
 
     try {
       setSavingDelete(true);
+      setDeleteError(null);
       await apiDelete(`/api/services/${selected.id}`);
       setDeleteOpen(false);
       setSelected(null);
       await load();
     } catch {
-      setDeleteOpen(false);
-      setSelected(null);
+      setDeleteError("No se pudo borrar el servicio.");
     } finally {
       setSavingDelete(false);
     }
   }
-
   return (
     <div className="space-y-6 p-6">
       <AppHeader
@@ -283,7 +283,8 @@ export default function ServiciosPage() {
             </div>
 
             {createError ? <p className="text-sm text-red-600">{createError}</p> : null}
-
+            {deleteError ? <p className="text-sm text-red-600">{deleteError}</p> : null}
+            
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>
                 Cancelar
