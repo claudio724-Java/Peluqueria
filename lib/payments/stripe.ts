@@ -6,6 +6,7 @@ type StripeCheckoutInput = {
   description: string;
   successUrl: string;
   cancelUrl: string;
+  stripeSecretKey: string;
   customerEmail?: string | null;
   metadata?: Record<string, string | undefined | null>;
   expiresAt?: number;
@@ -19,12 +20,6 @@ type StripeCheckoutSession = {
   expires_at?: number | null;
   metadata?: Record<string, string>;
 };
-
-function stripeSecretKey() {
-  const key = process.env.STRIPE_SECRET_KEY;
-  if (!key) throw new Error("STRIPE_SECRET_KEY no está configurada");
-  return key;
-}
 
 function stripeApiBase() {
   return process.env.STRIPE_API_BASE_URL || "https://api.stripe.com";
@@ -56,11 +51,11 @@ function formEncodeCheckoutBody(input: StripeCheckoutInput) {
   return params.toString();
 }
 
-async function stripeRequest<T>(path: string, init?: RequestInit): Promise<T> {
+async function stripeRequest<T>(path: string, stripeSecretKey: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${stripeApiBase()}${path}`, {
     ...init,
     headers: {
-      Authorization: `Bearer ${stripeSecretKey()}`,
+      Authorization: `Bearer ${stripeSecretKey}`,
       ...(init?.headers ?? {}),
     },
     cache: "no-store",
@@ -78,7 +73,8 @@ async function stripeRequest<T>(path: string, init?: RequestInit): Promise<T> {
 
 export async function createStripeCheckoutSession(input: StripeCheckoutInput) {
   assertAmount(input.amountCents);
-  return stripeRequest<StripeCheckoutSession>("/v1/checkout/sessions", {
+
+  return stripeRequest<StripeCheckoutSession>("/v1/checkout/sessions", input.stripeSecretKey, {
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
@@ -87,8 +83,11 @@ export async function createStripeCheckoutSession(input: StripeCheckoutInput) {
   });
 }
 
-export async function getStripeCheckoutSession(sessionId: string) {
-  return stripeRequest<StripeCheckoutSession>(`/v1/checkout/sessions/${encodeURIComponent(sessionId)}`);
+export async function getStripeCheckoutSession(sessionId: string, stripeSecretKey: string) {
+  return stripeRequest<StripeCheckoutSession>(
+    `/v1/checkout/sessions/${encodeURIComponent(sessionId)}`,
+    stripeSecretKey
+  );
 }
 
 function safeEqualHex(expected: string, candidate: string) {
@@ -98,7 +97,11 @@ function safeEqualHex(expected: string, candidate: string) {
   return crypto.timingSafeEqual(a, b);
 }
 
-export function verifyStripeWebhookSignature(rawBody: string, signatureHeader: string | null, endpointSecret: string) {
+export function verifyStripeWebhookSignature(
+  rawBody: string,
+  signatureHeader: string | null,
+  endpointSecret: string
+) {
   if (!signatureHeader) return false;
 
   const parts = Object.fromEntries(
@@ -120,6 +123,10 @@ export function verifyStripeWebhookSignature(rawBody: string, signatureHeader: s
   if (Math.abs(nowSeconds - Number(timestamp)) > toleranceSeconds) return false;
 
   const payloadToSign = `${timestamp}.${rawBody}`;
-  const expected = crypto.createHmac("sha256", endpointSecret).update(payloadToSign, "utf8").digest("hex");
+  const expected = crypto
+    .createHmac("sha256", endpointSecret)
+    .update(payloadToSign, "utf8")
+    .digest("hex");
+
   return safeEqualHex(expected, signature);
 }
