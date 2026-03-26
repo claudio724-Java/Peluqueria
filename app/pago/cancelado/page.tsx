@@ -16,9 +16,7 @@ export default function PagoCanceladoPage() {
         </p>
       </div>
 
-      <Link href="/" className="text-sm underline underline-offset-4">
-        Volver al inicio
-      </Link>
+   
     </main>
   );
 }

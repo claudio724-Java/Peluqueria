@@ -19,9 +19,7 @@ export default async function PagoExitoPage({ searchParams }: { searchParams: Pr
         </p>
       </div>
 
-      <Link href="/" className="text-sm underline underline-offset-4">
-        Volver al inicio
-      </Link>
+     
     </main>
   );
 }
