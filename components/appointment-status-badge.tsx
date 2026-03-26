@@ -9,7 +9,7 @@ const fallbackConfig = {
   className: "bg-warning/15 text-warning-foreground border-warning/30",
 }
 
-const statusConfig: Record<AppointmentStatus, { label: string; className: string }> = {
+const statusConfig: Record<string, { label: string; className: string }> = {
   pendiente: {
     label: "Pendiente",
     className: "bg-warning/15 text-warning-foreground border-warning/30",
@@ -41,8 +41,10 @@ export function AppointmentStatusBadge({
 }: {
   status?: AppointmentStatus | string | null
 }) {
-  const config =
-    (status ? statusConfig[status as AppointmentStatus] : undefined) ?? fallbackConfig
+  const normalizedStatus =
+    typeof status === "string" ? status.trim().toLowerCase() : ""
+
+  const config = statusConfig[normalizedStatus] ?? fallbackConfig
 
   return (
     <Badge variant="outline" className={cn("font-medium", config.className)}>
