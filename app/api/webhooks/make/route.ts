@@ -227,6 +227,101 @@ export async function POST(req: NextRequest) {
       currency: payment.currency,
     });
   }
+  // ... otros intents arriba
+
+  if (intent === "get_payment_status") {
+    const paymentId = (payload as any).paymentId as string | undefined;
+    const appointmentId = (payload as any).appointmentId as string | undefined;
+    const salonId = (payload as any).salonId as string | undefined;
+
+    if (!paymentId && !(appointmentId && salonId)) {
+      return jsonError("paymentId or (appointmentId + salonId) is required", 400);
+    }
+
+    const payment = paymentId
+      ? await prisma.payment.findUnique({ where: { id: paymentId } })
+      : await prisma.payment.findFirst({
+          where: { appointmentId, salonId },
+          orderBy: { createdAt: "desc" },
+        });
+
+    if (!payment) return jsonError("Payment not found", 404);
+
+    return NextResponse.json({
+      ok: true,
+      intent,
+      paymentId: payment.id,
+      status: payment.status,
+      paidAt: payment.paidAt,
+      url: payment.providerCheckoutUrl,
+      amountCents: payment.amountCents,
+      currency: payment.currency,
+    });
+  }
+
+  if (intent === "get_salon_data") {
+    const salonId = (payload as any).salonId as string | undefined;
+
+    if (!salonId) {
+      return jsonError("salonId is required", 400);
+    }
+
+    const salon = await prisma.salon.findUnique({
+      where: { id: salonId },
+      include: {
+        staff: {
+          where: { isActive: true },
+          orderBy: { name: "asc" },
+        },
+        services: {
+          where: { isActive: true },
+          orderBy: { name: "asc" },
+        },
+      },
+    });
+
+    if (!salon) {
+      return jsonError("Salon not found", 404);
+    }
+
+    return NextResponse.json({
+      ok: true,
+      intent,
+      salon: {
+        id: salon.id,
+        name: salon.name,
+        slug: salon.slug,
+        phone: salon.phone,
+        timezone: salon.timezone,
+        createdAt: salon.createdAt,
+        updatedAt: salon.updatedAt,
+      },
+      trabajadores: salon.staff.map((staff) => ({
+        id: staff.id,
+        salonId: staff.salonId,
+        name: staff.name,
+        phone: staff.phone,
+        role: staff.role,
+        isActive: staff.isActive,
+        createdAt: staff.createdAt,
+        updatedAt: staff.updatedAt,
+      })),
+      servicios: salon.services.map((service) => ({
+        id: service.id,
+        salonId: service.salonId,
+        name: service.name,
+        durationMin: service.durationMin,
+        priceCents: service.priceCents,
+        bufferMin: service.bufferMin,
+        isActive: service.isActive,
+        createdAt: service.createdAt,
+        updatedAt: service.updatedAt,
+      })),
+    });
+  }
+
+  return jsonError(`Unknown intent: ${intent}`, 400);
+}
 
   return jsonError(`Unknown intent: ${intent}`, 400);
 }
