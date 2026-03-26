@@ -12,18 +12,19 @@ import type { Cita } from "@/lib/types"
 
 type ApiAppointmentsResponse = { ok: true; items: any[] }
 type ApiStaffResponse = { ok: true; items: any[] }
+type ApiSalonsResponse = { ok: true; items: any[] }
 
-const hours = [
-  "09:00","09:30","10:00","10:30","11:00","11:30",
-  "12:00","12:30","13:00","14:00","14:30","15:00",
-  "15:30","16:00","16:30","17:00","17:30","18:00",
-  "18:30","19:00",
-]
+type SalonBusinessHour = {
+  dayOfWeek: number
+  shift: "MORNING" | "AFTERNOON"
+  isOpen: boolean
+  startMin: number | null
+  endMin: number | null
+}
 
-// strip semanal: Lun–Sab, calculado desde la fecha seleccionada
 function buildWeekDates(baseDateISO: string) {
   const base = new Date(`${baseDateISO}T00:00:00`)
-  const day = base.getDay() // 0 dom, 1 lun...
+  const day = base.getDay()
   const diffToMonday = day === 0 ? -6 : 1 - day
   const monday = new Date(base)
   monday.setDate(base.getDate() + diffToMonday)
@@ -49,19 +50,66 @@ function endOfDayISO(dateISO: string) {
   return new Date(`${dateISO}T23:59:59.999`).toISOString()
 }
 
+function minsToHour(min: number) {
+  const h = String(Math.floor(min / 60)).padStart(2, "0")
+  const m = String(min % 60).padStart(2, "0")
+  return `${h}:${m}`
+}
+
+function buildVisibleHours(
+  dateISO: string,
+  businessHours: SalonBusinessHour[],
+  slotIntervalMin: number
+) {
+  const dayOfWeek = new Date(`${dateISO}T00:00:00`).getDay()
+
+  const dayBlocks = businessHours
+    .filter(
+      (h) =>
+        h.dayOfWeek === dayOfWeek &&
+        h.isOpen &&
+        h.startMin !== null &&
+        h.endMin !== null
+    )
+    .sort((a, b) => (a.startMin ?? 0) - (b.startMin ?? 0))
+
+  if (!dayBlocks.length) return []
+
+  const hours: string[] = []
+
+  for (const block of dayBlocks) {
+    const start = block.startMin as number
+    const end = block.endMin as number
+
+    for (let min = start; min < end; min += slotIntervalMin) {
+      hours.push(minsToHour(min))
+    }
+  }
+
+  return [...new Set(hours)]
+}
+
 export default function AgendaPage() {
-  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [selectedDate, setSelectedDate] = useState(() =>
+    new Date().toISOString().slice(0, 10)
+  )
   const [selectedEmpleado, setSelectedEmpleado] = useState<string | null>(null)
 
   const [appointments, setAppointments] = useState<Cita[]>([])
-  const [staff, setStaff] = useState<{ id: string; nombre: string; color: string; activo: boolean }[]>([])
+  const [staff, setStaff] = useState<
+    { id: string; nombre: string; color: string; activo: boolean }[]
+  >([])
+  const [businessHours, setBusinessHours] = useState<SalonBusinessHour[]>([])
+  const [slotIntervalMin, setSlotIntervalMin] = useState(30)
   const [loading, setLoading] = useState(true)
 
   const dates = useMemo(() => buildWeekDates(selectedDate), [selectedDate])
 
-  const activeEmpleados = useMemo(
-    () => staff.filter((e) => e.activo),
-    [staff]
+  const activeEmpleados = useMemo(() => staff.filter((e) => e.activo), [staff])
+
+  const hours = useMemo(
+    () => buildVisibleHours(selectedDate, businessHours, slotIntervalMin),
+    [selectedDate, businessHours, slotIntervalMin]
   )
 
   async function loadDay(dateISO: string) {
@@ -69,11 +117,12 @@ export default function AgendaPage() {
     const from = startOfDayISO(dateISO)
     const to = endOfDayISO(dateISO)
 
-    const [a, s] = await Promise.all([
+    const [a, s, salonRes] = await Promise.all([
       apiGet<ApiAppointmentsResponse>(
         `/api/appointments?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
       ),
       apiGet<ApiStaffResponse>(`/api/staff`),
+      apiGet<ApiSalonsResponse>(`/api/salons`),
     ])
 
     setAppointments((a.items ?? []).map(mapAppointmentToCita))
@@ -86,6 +135,10 @@ export default function AgendaPage() {
         activo: (x.isActive ?? x.activo ?? true) === true,
       }))
     )
+
+    const salon = salonRes.items?.[0]
+    setBusinessHours(salon?.businessHours ?? [])
+    setSlotIntervalMin(salon?.slotIntervalMin ?? 30)
 
     setLoading(false)
   }
@@ -110,7 +163,6 @@ export default function AgendaPage() {
       />
 
       <main className="p-4 lg:p-6">
-        {/* Date picker strip */}
         <Card className="shadow-sm mb-6">
           <CardContent className="p-3">
             <div className="flex items-center gap-2">
@@ -160,7 +212,6 @@ export default function AgendaPage() {
           </CardContent>
         </Card>
 
-        {/* Employee filter */}
         <div className="flex items-center gap-2 mb-4 overflow-x-auto pb-1">
           <Button
             variant={selectedEmpleado === null ? "default" : "outline"}
@@ -187,51 +238,51 @@ export default function AgendaPage() {
           ))}
         </div>
 
-        {/* Timeline */}
         <Card className="shadow-sm">
           <CardContent className="p-0">
-            <div className="divide-y divide-border">
-              {hours.map((hour) => {
-                const hourCitas = filteredCitas.filter((c) => c.hora === hour)
-                return (
-                  <div key={hour} className="flex min-h-[56px]">
-                    <div className="w-16 shrink-0 flex items-start justify-end pr-3 pt-3 border-r border-border">
-                      <span className="text-xs font-medium text-muted-foreground">{hour}</span>
-                    </div>
+            {!hours.length ? (
+              <div className="p-6 text-sm text-muted-foreground">
+                El salón está cerrado ese día o no hay horario configurado.
+              </div>
+            ) : (
+              <div className="divide-y divide-border">
+                {hours.map((hour) => {
+                  const hourCitas = filteredCitas.filter((c) => c.hora === hour)
 
-                    <div className="flex-1 p-2 flex flex-col gap-1.5">
-                      {hourCitas.map((cita) => (
-                        <div
-                          key={cita.id}
-                          className="flex items-center gap-3 px-3 py-2 rounded-lg border"
-                          style={{
-                            borderLeftColor: cita.empleado.color,
-                            borderLeftWidth: "3px",
-                          }}
-                        >
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-foreground truncate">
-                              {cita.cliente.nombre}
-                            </p>
-                            <p className="text-xs text-muted-foreground truncate">
-                              {cita.servicio.nombre} ({cita.duracion}min) - {cita.empleado.nombre}
-                            </p>
+                  return (
+                    <div key={hour} className="flex min-h-[56px]">
+                      <div className="w-16 shrink-0 flex items-start justify-end pr-3 pt-3 border-r border-border">
+                        <span className="text-xs font-medium text-muted-foreground">{hour}</span>
+                      </div>
+
+                      <div className="flex-1 p-2 flex flex-col gap-1.5">
+                        {hourCitas.map((cita) => (
+                          <div
+                            key={cita.id}
+                            className="flex items-center gap-3 px-3 py-2 rounded-lg border"
+                            style={{
+                              borderLeftColor: cita.empleado.color,
+                              borderLeftWidth: "3px",
+                            }}
+                          >
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-foreground truncate">
+                                {cita.cliente.nombre}
+                              </p>
+                              <p className="text-xs text-muted-foreground truncate">
+                                {cita.servicio.nombre} ({cita.duracion}min) - {cita.empleado.nombre}
+                              </p>
+                            </div>
+
+                            <AppointmentStatusBadge estado={cita.estado} />
                           </div>
-
-                          <span className="text-xs font-semibold text-foreground shrink-0">
-                            {(cita.precio ?? 0)}€
-                          </span>
-
-                          <AppointmentStatusBadge status={cita.estado} />
-                        </div>
-                      ))}
-
-                      {!loading && hourCitas.length === 0 ? null : null}
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                )
-              })}
-            </div>
+                  )
+                })}
+              </div>
+            )}
           </CardContent>
         </Card>
       </main>
