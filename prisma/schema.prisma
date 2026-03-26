@@ -85,6 +85,9 @@ model Salon {
   slotIntervalMin Int                @default(30)
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt
+  stripeEnabled                  Boolean @default(false)
+  stripeWebhookSecretEncrypted   String?
+  stripeSecretKeyEncrypted       String?
 
   businessHours  SalonBusinessHour[]
   services       Service[]

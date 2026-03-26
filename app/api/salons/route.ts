@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/require-session";
+import { encryptText } from "@/lib/crypto";
 
 type BusinessHourInput = {
   dayOfWeek: number;
@@ -28,7 +29,22 @@ export async function GET() {
     },
   });
 
-  return Response.json({ ok: true, items: salon ? [salon] : [] });
+  if (!salon) {
+    return Response.json({ ok: true, items: [] });
+  }
+
+  return Response.json({
+    ok: true,
+    items: [
+      {
+        ...salon,
+        hasStripeWebhookSecret: Boolean(salon.stripeWebhookSecretEncrypted),
+        hasStripeSecretKey: Boolean(salon.stripeSecretKeyEncrypted),
+        stripeWebhookSecretEncrypted: undefined,
+        stripeSecretKeyEncrypted: undefined,
+      },
+    ],
+  });
 }
 
 export async function PATCH(req: Request) {
@@ -56,12 +72,21 @@ export async function PATCH(req: Request) {
   });
 
   if (existingBySlug) {
-    return Response.json({ ok: false, error: "Slug already in use" }, { status: 409 });
+    return Response.json(
+      { ok: false, error: "Slug already in use" },
+      { status: 409 }
+    );
   }
 
   const businessHours: BusinessHourInput[] = Array.isArray(body.businessHours)
     ? body.businessHours
     : [];
+
+  const stripeWebhookSecret =
+    typeof body.stripeWebhookSecret === "string" ? body.stripeWebhookSecret.trim() : undefined;
+
+  const stripeSecretKey =
+    typeof body.stripeSecretKey === "string" ? body.stripeSecretKey.trim() : undefined;
 
   const updated = await prisma.$transaction(async (tx) => {
     const salon = await tx.salon.update({
@@ -75,6 +100,21 @@ export async function PATCH(req: Request) {
         currency: body.currency ? String(body.currency).trim() : "EUR",
         timezone: String(body.timezone).trim(),
         slotIntervalMin: body.slotIntervalMin ? Number(body.slotIntervalMin) : 30,
+        stripeEnabled: Boolean(body.stripeEnabled),
+        ...(stripeWebhookSecret !== undefined
+          ? {
+              stripeWebhookSecretEncrypted: stripeWebhookSecret
+                ? encryptText(stripeWebhookSecret)
+                : null,
+            }
+          : {}),
+        ...(stripeSecretKey !== undefined
+          ? {
+              stripeSecretKeyEncrypted: stripeSecretKey
+                ? encryptText(stripeSecretKey)
+                : null,
+            }
+          : {}),
       },
     });
 
@@ -113,5 +153,16 @@ export async function PATCH(req: Request) {
     });
   });
 
-  return Response.json({ ok: true, item: updated });
+  return Response.json({
+    ok: true,
+    item: updated
+      ? {
+          ...updated,
+          hasStripeWebhookSecret: Boolean(updated.stripeWebhookSecretEncrypted),
+          hasStripeSecretKey: Boolean(updated.stripeSecretKeyEncrypted),
+          stripeWebhookSecretEncrypted: undefined,
+          stripeSecretKeyEncrypted: undefined,
+        }
+      : null,
+  });
 }

@@ -16,7 +16,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ConfirmDialog } from "@/components/confirm-dialog";
-import { Store, Bell, Clock, Shield } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Store, Bell, Clock, Shield, CreditCard } from "lucide-react";
 import { apiGet, apiPatch } from "@/lib/client-api";
 
 type SalonBusinessHour = {
@@ -37,6 +44,9 @@ type Salon = {
   currency: string;
   timezone: string;
   slotIntervalMin: number;
+  stripeEnabled: boolean;
+  hasStripeWebhookSecret: boolean;
+  hasStripeSecretKey: boolean;
   businessHours: SalonBusinessHour[];
 };
 
@@ -120,8 +130,20 @@ export default function AjustesPage() {
   const [slotIntervalMin, setSlotIntervalMin] = useState("30");
   const [schedule, setSchedule] = useState<DaySchedule[]>(buildSchedule([]));
 
+  const [stripeEnabled, setStripeEnabled] = useState(false);
+  const [hasStripeWebhookSecret, setHasStripeWebhookSecret] = useState(false);
+  const [hasStripeSecretKey, setHasStripeSecretKey] = useState(false);
+
+  const [stripeModalOpen, setStripeModalOpen] = useState(false);
+  const [stripeWebhookSecret, setStripeWebhookSecret] = useState("");
+  const [stripeSecretKey, setStripeSecretKey] = useState("");
+  const [savingStripe, setSavingStripe] = useState(false);
+  const [stripeError, setStripeError] = useState<string | null>(null);
+  const [stripeSuccess, setStripeSuccess] = useState<string | null>(null);
+
   async function loadSalon() {
     setLoading(true);
+    setErrorGeneral(null);
 
     try {
       const data = await apiGet<{ ok: true; items: Salon[] }>("/api/salons");
@@ -137,6 +159,9 @@ export default function AjustesPage() {
         setTimezone(salon.timezone ?? "Europe/Madrid");
         setSlotIntervalMin(String(salon.slotIntervalMin ?? 30));
         setSchedule(buildSchedule(salon.businessHours ?? []));
+        setStripeEnabled(Boolean(salon.stripeEnabled));
+        setHasStripeWebhookSecret(Boolean(salon.hasStripeWebhookSecret));
+        setHasStripeSecretKey(Boolean(salon.hasStripeSecretKey));
       }
     } catch {
       setErrorGeneral("No se pudieron cargar los ajustes del salón.");
@@ -153,6 +178,25 @@ export default function AjustesPage() {
     setSchedule((prev) =>
       prev.map((day) => (day.dayOfWeek === dayOfWeek ? { ...day, ...patch } : day))
     );
+  }
+
+  function buildBusinessHoursPayload() {
+    return schedule.flatMap((day) => [
+      {
+        dayOfWeek: day.dayOfWeek,
+        shift: "MORNING" as const,
+        isOpen: day.morningOpen,
+        startMin: day.morningOpen ? timeToMin(day.morningStart) : null,
+        endMin: day.morningOpen ? timeToMin(day.morningEnd) : null,
+      },
+      {
+        dayOfWeek: day.dayOfWeek,
+        shift: "AFTERNOON" as const,
+        isOpen: day.afternoonOpen,
+        startMin: day.afternoonOpen ? timeToMin(day.afternoonStart) : null,
+        endMin: day.afternoonOpen ? timeToMin(day.afternoonEnd) : null,
+      },
+    ]);
   }
 
   async function handleSaveGeneral() {
@@ -175,29 +219,12 @@ export default function AjustesPage() {
     }
 
     if (!slotIntervalMin || Number(slotIntervalMin) <= 0) {
-      setErrorGeneral("El intervalo debe ser mayor que 0.");
+      setErrorGeneral("El intervalo entre slots debe ser mayor que 0.");
       return;
     }
 
     try {
       setSavingGeneral(true);
-
-      const businessHours = schedule.flatMap((day) => [
-        {
-          dayOfWeek: day.dayOfWeek,
-          shift: "MORNING" as const,
-          isOpen: day.morningOpen,
-          startMin: day.morningOpen ? timeToMin(day.morningStart) : null,
-          endMin: day.morningOpen ? timeToMin(day.morningEnd) : null,
-        },
-        {
-          dayOfWeek: day.dayOfWeek,
-          shift: "AFTERNOON" as const,
-          isOpen: day.afternoonOpen,
-          startMin: day.afternoonOpen ? timeToMin(day.afternoonStart) : null,
-          endMin: day.afternoonOpen ? timeToMin(day.afternoonEnd) : null,
-        },
-      ]);
 
       await apiPatch("/api/salons", {
         name: name.trim(),
@@ -208,10 +235,11 @@ export default function AjustesPage() {
         currency,
         timezone: timezone.trim(),
         slotIntervalMin: Number(slotIntervalMin),
-        businessHours,
+        stripeEnabled,
+        businessHours: buildBusinessHoursPayload(),
       });
 
-      setSuccessGeneral("Cambios generales guardados correctamente.");
+      setSuccessGeneral("Cambios guardados correctamente.");
       await loadSalon();
     } catch {
       setErrorGeneral("No se pudieron guardar los cambios.");
@@ -259,22 +287,34 @@ export default function AjustesPage() {
     try {
       setSavingSchedule(true);
 
-      const businessHours = schedule.flatMap((day) => [
-        {
-          dayOfWeek: day.dayOfWeek,
-          shift: "MORNING" as const,
-          isOpen: day.morningOpen,
-          startMin: day.morningOpen ? timeToMin(day.morningStart) : null,
-          endMin: day.morningOpen ? timeToMin(day.morningEnd) : null,
-        },
-        {
-          dayOfWeek: day.dayOfWeek,
-          shift: "AFTERNOON" as const,
-          isOpen: day.afternoonOpen,
-          startMin: day.afternoonOpen ? timeToMin(day.afternoonStart) : null,
-          endMin: day.afternoonOpen ? timeToMin(day.afternoonEnd) : null,
-        },
-      ]);
+      await apiPatch("/api/salons", {
+        name: name.trim(),
+        slug: slug.trim(),
+        phone: phone.trim() || null,
+        email: email.trim() || null,
+        address: address.trim() || null,
+        currency,
+        timezone: timezone.trim(),
+        slotIntervalMin: Number(slotIntervalMin || 30),
+        stripeEnabled,
+        businessHours: buildBusinessHoursPayload(),
+      });
+
+      setSuccessSchedule("Horarios guardados correctamente.");
+      await loadSalon();
+    } catch {
+      setErrorSchedule("No se pudieron guardar los horarios.");
+    } finally {
+      setSavingSchedule(false);
+    }
+  }
+
+  async function handleSaveStripeConfig() {
+    setStripeError(null);
+    setStripeSuccess(null);
+
+    try {
+      setSavingStripe(true);
 
       await apiPatch("/api/salons", {
         name: name.trim(),
@@ -285,15 +325,21 @@ export default function AjustesPage() {
         currency,
         timezone: timezone.trim(),
         slotIntervalMin: Number(slotIntervalMin || 30),
-        businessHours,
+        stripeEnabled,
+        stripeWebhookSecret: stripeWebhookSecret.trim() || "",
+        stripeSecretKey: stripeSecretKey.trim() || "",
+        businessHours: buildBusinessHoursPayload(),
       });
 
-      setSuccessSchedule("Horarios guardados correctamente.");
+      setStripeWebhookSecret("");
+      setStripeSecretKey("");
+      setStripeModalOpen(false);
+      setStripeSuccess("Configuración de Stripe guardada.");
       await loadSalon();
     } catch {
-      setErrorSchedule("No se pudieron guardar los horarios.");
+      setStripeError("No se pudo guardar la configuración de Stripe.");
     } finally {
-      setSavingSchedule(false);
+      setSavingStripe(false);
     }
   }
 
@@ -420,12 +466,47 @@ export default function AjustesPage() {
                         placeholder="30"
                       />
                     </div>
+
+                    <div className="rounded-lg border p-4 space-y-4 md:col-span-2">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10">
+                          <CreditCard className="h-4.5 w-4.5 text-primary" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium">Pagos con Stripe</p>
+                          <p className="text-xs text-muted-foreground">
+                            Activa pagos online por enlace para este salón.
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-4">
+                        <span className="text-sm">Habilitar pagos con Stripe</span>
+                        <Switch checked={stripeEnabled} onCheckedChange={setStripeEnabled} />
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-3">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => {
+                            setStripeError(null);
+                            setStripeSuccess(null);
+                            setStripeModalOpen(true);
+                          }}
+                        >
+                          Configurar Stripe
+                        </Button>
+
+                        <span className="text-xs text-muted-foreground">
+                          Webhook: {hasStripeWebhookSecret ? "configurado" : "pendiente"} · Secret key: {hasStripeSecretKey ? "configurada" : "pendiente"}
+                        </span>
+                      </div>
+                    </div>
                   </div>
 
                   {errorGeneral ? <p className="text-sm text-red-600">{errorGeneral}</p> : null}
-                  {successGeneral ? (
-                    <p className="text-sm text-green-600">{successGeneral}</p>
-                  ) : null}
+                  {successGeneral ? <p className="text-sm text-green-600">{successGeneral}</p> : null}
 
                   <div className="flex justify-end">
                     <Button onClick={handleSaveGeneral} disabled={savingGeneral || loading}>
@@ -558,9 +639,7 @@ export default function AjustesPage() {
                 ))}
 
                 {errorSchedule ? <p className="text-sm text-red-600">{errorSchedule}</p> : null}
-                {successSchedule ? (
-                  <p className="text-sm text-green-600">{successSchedule}</p>
-                ) : null}
+                {successSchedule ? <p className="text-sm text-green-600">{successSchedule}</p> : null}
 
                 <div className="flex justify-end">
                   <Button onClick={handleSaveSchedule} disabled={savingSchedule || loading}>
@@ -627,6 +706,50 @@ export default function AjustesPage() {
           </TabsContent>
         </Tabs>
       </main>
+
+      <Dialog open={stripeModalOpen} onOpenChange={setStripeModalOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Configurar Stripe</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="stripeWebhookSecret">Stripe webhook secret</Label>
+              <Input
+                id="stripeWebhookSecret"
+                type="password"
+                value={stripeWebhookSecret}
+                onChange={(e) => setStripeWebhookSecret(e.target.value)}
+                placeholder={hasStripeWebhookSecret ? "Ya configurado" : "whsec_..."}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="stripeSecretKey">Stripe secret key</Label>
+              <Input
+                id="stripeSecretKey"
+                type="password"
+                value={stripeSecretKey}
+                onChange={(e) => setStripeSecretKey(e.target.value)}
+                placeholder={hasStripeSecretKey ? "Ya configurada" : "sk_live_... o sk_test_..."}
+              />
+            </div>
+
+            {stripeError ? <p className="text-sm text-red-600">{stripeError}</p> : null}
+            {stripeSuccess ? <p className="text-sm text-green-600">{stripeSuccess}</p> : null}
+          </div>
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setStripeModalOpen(false)}>
+              Cancelar
+            </Button>
+            <Button type="button" onClick={handleSaveStripeConfig} disabled={savingStripe}>
+              {savingStripe ? "Guardando..." : "Guardar Stripe"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <ConfirmDialog
         open={confirmReset}

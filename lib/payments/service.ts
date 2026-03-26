@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { createStripeCheckoutSession } from "@/lib/payments/stripe";
+import { decryptText } from "@/lib/crypto";
 
 type CreatePaymentLinkInput = {
   salonId: string;
@@ -28,6 +29,30 @@ function paymentUrls(paymentId: string) {
 }
 
 export async function createPaymentLink(input: CreatePaymentLinkInput) {
+  const salon = await prisma.salon.findUnique({
+    where: { id: input.salonId },
+    select: {
+      id: true,
+      currency: true,
+      stripeEnabled: true,
+      stripeSecretKeyEncrypted: true,
+    },
+  });
+
+  if (!salon) {
+    throw new Error("Salón no encontrado");
+  }
+
+  if (!salon.stripeEnabled) {
+    throw new Error("Stripe no está habilitado en este salón");
+  }
+
+  if (!salon.stripeSecretKeyEncrypted) {
+    throw new Error("Stripe no está configurado en este salón");
+  }
+
+  const stripeSecretKey = decryptText(salon.stripeSecretKeyEncrypted);
+
   const appointment = input.appointmentId
     ? await prisma.appointment.findFirst({
         where: { id: input.appointmentId, salonId: input.salonId },
@@ -47,7 +72,7 @@ export async function createPaymentLink(input: CreatePaymentLinkInput) {
     throw new Error("No se puede generar el pago porque el importe es 0");
   }
 
-  const currency = (input.currency || "EUR").toUpperCase();
+  const currency = (input.currency || salon.currency || "EUR").toUpperCase();
   const customerName = input.customerName || appointment?.customer.name || undefined;
   const customerPhone = input.customerPhone || appointment?.customer.phone || undefined;
   const customerEmail = input.customerEmail || appointment?.customer.email || undefined;
@@ -73,12 +98,14 @@ export async function createPaymentLink(input: CreatePaymentLinkInput) {
 
   try {
     const { successUrl, cancelUrl } = paymentUrls(payment.id);
+
     const session = await createStripeCheckoutSession({
       amountCents,
       currency,
       description,
       successUrl,
       cancelUrl,
+      stripeSecretKey,
       customerEmail,
       metadata: {
         paymentId: payment.id,
