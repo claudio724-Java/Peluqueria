@@ -4,6 +4,11 @@ import { Badge } from "@/components/ui/badge"
 import type { AppointmentStatus } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
+const fallbackConfig = {
+  label: "Pendiente",
+  className: "bg-warning/15 text-warning-foreground border-warning/30",
+}
+
 const statusConfig: Record<AppointmentStatus, { label: string; className: string }> = {
   pendiente: {
     label: "Pendiente",
@@ -31,8 +36,14 @@ const statusConfig: Record<AppointmentStatus, { label: string; className: string
   },
 }
 
-export function AppointmentStatusBadge({ status }: { status: AppointmentStatus }) {
-  const config = statusConfig[status]
+export function AppointmentStatusBadge({
+  status,
+}: {
+  status?: AppointmentStatus | string | null
+}) {
+  const config =
+    (status ? statusConfig[status as AppointmentStatus] : undefined) ?? fallbackConfig
+
   return (
     <Badge variant="outline" className={cn("font-medium", config.className)}>
       {config.label}
