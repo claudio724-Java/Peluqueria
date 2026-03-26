@@ -259,7 +259,7 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  if (intent === "get_salon_data") {
+    if (intent === "get_salon_data") {
     const salonId = (payload as any).salonId as string | undefined;
 
     if (!salonId) {
@@ -269,6 +269,9 @@ export async function POST(req: NextRequest) {
     const salon = await prisma.salon.findUnique({
       where: { id: salonId },
       include: {
+        businessHours: {
+          orderBy: [{ dayOfWeek: "asc" }, { shift: "asc" }],
+        },
         staff: {
           where: { isActive: true },
           orderBy: { name: "asc" },
@@ -292,10 +295,25 @@ export async function POST(req: NextRequest) {
         name: salon.name,
         slug: salon.slug,
         phone: salon.phone,
+        email: salon.email,
+        address: salon.address,
+        currency: salon.currency,
         timezone: salon.timezone,
+        slotIntervalMin: salon.slotIntervalMin,
         createdAt: salon.createdAt,
         updatedAt: salon.updatedAt,
       },
+      horarios: salon.businessHours.map((item) => ({
+        id: item.id,
+        salonId: item.salonId,
+        dayOfWeek: item.dayOfWeek,
+        shift: item.shift,
+        isOpen: item.isOpen,
+        startMin: item.startMin,
+        endMin: item.endMin,
+        createdAt: item.createdAt,
+        updatedAt: item.updatedAt,
+      })),
       trabajadores: salon.staff.map((staff) => ({
         id: staff.id,
         salonId: staff.salonId,
@@ -319,7 +337,6 @@ export async function POST(req: NextRequest) {
       })),
     });
   }
-
   return jsonError(`Unknown intent: ${intent}`, 400);
 }
 
