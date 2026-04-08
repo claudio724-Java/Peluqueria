@@ -287,55 +287,79 @@ export async function POST(req: NextRequest) {
       return jsonError("Salon not found", 404);
     }
 
-    return NextResponse.json({
-      ok: true,
-      intent,
-      salon: {
-        id: salon.id,
-        name: salon.name,
-        slug: salon.slug,
-        phone: salon.phone,
-        email: salon.email,
-        address: salon.address,
-        currency: salon.currency,
-        timezone: salon.timezone,
-        slotIntervalMin: salon.slotIntervalMin,
-        createdAt: salon.createdAt,
-        updatedAt: salon.updatedAt,
-      },
-      horarios: salon.businessHours.map((item) => ({
-        id: item.id,
-        salonId: item.salonId,
-        dayOfWeek: item.dayOfWeek,
-        shift: item.shift,
-        isOpen: item.isOpen,
-        startMin: item.startMin,
-        endMin: item.endMin,
-        createdAt: item.createdAt,
-        updatedAt: item.updatedAt,
-      })),
-      trabajadores: salon.staff.map((staff) => ({
-        id: staff.id,
-        salonId: staff.salonId,
-        name: staff.name,
-        phone: staff.phone,
-        role: staff.role,
-        isActive: staff.isActive,
-        createdAt: staff.createdAt,
-        updatedAt: staff.updatedAt,
-      })),
-      servicios: salon.services.map((service) => ({
-        id: service.id,
-        salonId: service.salonId,
-        name: service.name,
-        durationMin: service.durationMin,
-        priceCents: service.priceCents,
-        bufferMin: service.bufferMin,
-        isActive: service.isActive,
-        createdAt: service.createdAt,
-        updatedAt: service.updatedAt,
-      })),
-    });
+    const hasStripeSecretKey = Boolean(salon.stripeSecretKeyEncrypted);
+const hasStripeWebhookSecret = Boolean(salon.stripeWebhookSecretEncrypted);
+const hasEnvStripeWebhookSecret = Boolean(process.env.STRIPE_WEBHOOK_SECRET);
+
+return NextResponse.json({
+  ok: true,
+  intent,
+  salon: {
+    id: salon.id,
+    name: salon.name,
+    slug: salon.slug,
+    phone: salon.phone,
+    email: salon.email,
+    address: salon.address,
+    currency: salon.currency,
+    timezone: salon.timezone,
+    slotIntervalMin: salon.slotIntervalMin,
+
+    stripeEnabled: Boolean(salon.stripeEnabled),
+    hasStripeSecretKey,
+    hasStripeWebhookSecret,
+    hasEnvStripeWebhookSecret,
+
+    canUseStripePaymentLinks:
+      Boolean(salon.stripeEnabled) &&
+      hasStripeSecretKey &&
+      (hasStripeWebhookSecret || hasEnvStripeWebhookSecret),
+
+    stripeMode:
+      hasStripeWebhookSecret && hasEnvStripeWebhookSecret
+        ? "mixed"
+        : hasStripeWebhookSecret
+          ? "salon"
+          : hasEnvStripeWebhookSecret
+            ? "env"
+            : "none",
+
+    createdAt: salon.createdAt,
+    updatedAt: salon.updatedAt,
+  },
+  horarios: salon.businessHours.map((item) => ({
+    id: item.id,
+    salonId: item.salonId,
+    dayOfWeek: item.dayOfWeek,
+    shift: item.shift,
+    isOpen: item.isOpen,
+    startMin: item.startMin,
+    endMin: item.endMin,
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt,
+  })),
+  trabajadores: salon.staff.map((staff) => ({
+    id: staff.id,
+    salonId: staff.salonId,
+    name: staff.name,
+    phone: staff.phone,
+    role: staff.role,
+    isActive: staff.isActive,
+    createdAt: staff.createdAt,
+    updatedAt: staff.updatedAt,
+  })),
+  servicios: salon.services.map((service) => ({
+    id: service.id,
+    salonId: service.salonId,
+    name: service.name,
+    durationMin: service.durationMin,
+    priceCents: service.priceCents,
+    bufferMin: service.bufferMin,
+    isActive: service.isActive,
+    createdAt: service.createdAt,
+    updatedAt: service.updatedAt,
+  })),
+});
   }
   return jsonError(`Unknown intent: ${intent}`, 400);
 }
