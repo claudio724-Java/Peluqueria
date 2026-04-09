@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown, LogOut, Scissors } from "lucide-react";
+import { ChevronDown, LogOut, Scissors, Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -83,14 +83,14 @@ export function AppHeader({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-48">
+            {((session?.user as any)?.role === "MANAGER") ? (
+              <DropdownMenuItem asChild>
+                <Link href="/admin"><Shield className="mr-2 h-4 w-4" />Administración</Link>
+              </DropdownMenuItem>
+            ) : null}
             <DropdownMenuItem asChild>
               <Link href="/ajustes">Ajustes</Link>
             </DropdownMenuItem>
-            {((session?.user as any)?.role === "OWNER" || (session?.user as any)?.role === "MANAGER") ? (
-              <DropdownMenuItem asChild>
-                <Link href="/admin">Administración</Link>
-              </DropdownMenuItem>
-            ) : null}
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => signOut({ callbackUrl: "/login" })}>
               <LogOut className="mr-2 h-4 w-4" />

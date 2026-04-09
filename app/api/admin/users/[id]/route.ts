@@ -1,141 +1,147 @@
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
-import { UserRole } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { isOwner, requireAdminSession } from "@/lib/permissions";
+import { requireManager } from "@/lib/require-manager";
+import { UserRole } from "@prisma/client";
 
-type Params = { params: Promise<{ id: string }> };
-
-const allowedRoles = new Set(Object.values(UserRole));
-
-async function ensureActiveOwnerCount(salonId: string) {
-  return prisma.user.count({
-    where: {
-      salonId,
-      role: UserRole.OWNER,
-      isActive: true,
-    },
-  });
+function sanitizeUser(user: any) {
+  return {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    role: user.role,
+    isActive: user.isActive,
+    salonId: user.salonId,
+    createdAt: user.createdAt,
+    updatedAt: user.updatedAt,
+    salon: user.salon
+      ? {
+          id: user.salon.id,
+          name: user.salon.name,
+          slug: user.salon.slug,
+        }
+      : null,
+  };
 }
 
-export async function PATCH(req: NextRequest, { params }: Params) {
-  const { session, response } = await requireAdminSession();
+function slugify(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40);
+}
+
+async function uniqueSlug(name: string, currentSalonId?: string | null) {
+  const baseSlug = slugify(name) || `salon-${Date.now()}`;
+  let slug = baseSlug;
+  let n = 1;
+
+  while (true) {
+    const existing = await prisma.salon.findUnique({ where: { slug }, select: { id: true } });
+    if (!existing || existing.id === currentSalonId) return slug;
+    n += 1;
+    slug = `${baseSlug}-${n}`;
+  }
+}
+
+export async function PATCH(req: NextRequest, context: { params: Promise<{ id: string }> }) {
+  const { response } = await requireManager();
   if (response) return response;
 
-  const { id } = await params;
-  const currentUserId = (session!.user as any).id as string;
-  const salonId = (session!.user as any).salonId as string;
-  const requesterRole = (session!.user as any).role as string;
+  const { id } = await context.params;
   const body = await req.json().catch(() => null);
-
-  const existing = await prisma.user.findFirst({ where: { id, salonId } });
-  if (!existing) {
-    return NextResponse.json({ ok: false, error: "Usuario no encontrado." }, { status: 404 });
-  }
-
-  if (existing.role === UserRole.OWNER && !isOwner(requesterRole)) {
-    return NextResponse.json({ ok: false, error: "Solo el propietario puede modificar otra cuenta propietaria." }, { status: 403 });
-  }
-
-  const name = body?.name ? String(body.name).trim() : "";
-  const email = body?.email ? String(body.email).toLowerCase().trim() : "";
-  const nextRole = body?.role ? String(body.role) : existing.role;
-  const nextActive = typeof body?.isActive === "boolean" ? body.isActive : existing.isActive;
-  const password = body?.password ? String(body.password) : "";
-
-  if (!name || !email) {
-    return NextResponse.json({ ok: false, error: "Nombre y email son obligatorios." }, { status: 400 });
-  }
-
-  if (!allowedRoles.has(nextRole as UserRole)) {
-    return NextResponse.json({ ok: false, error: "Rol inválido." }, { status: 400 });
-  }
-
-  if (nextRole === UserRole.OWNER && !isOwner(requesterRole)) {
-    return NextResponse.json({ ok: false, error: "Solo el propietario puede asignar el rol OWNER." }, { status: 403 });
-  }
-
-  if (password && password.length < 8) {
-    return NextResponse.json({ ok: false, error: "La nueva contraseña debe tener al menos 8 caracteres." }, { status: 400 });
-  }
-
-  const emailInUse = await prisma.user.findFirst({
-    where: {
-      email,
-      id: { not: id },
-    },
-    select: { id: true },
-  });
-
-  if (emailInUse) {
-    return NextResponse.json({ ok: false, error: "Ya existe una cuenta con ese email." }, { status: 409 });
-  }
-
-  const wouldRemoveOwner = existing.role === UserRole.OWNER && (nextRole !== UserRole.OWNER || !nextActive);
-  if (wouldRemoveOwner) {
-    const activeOwners = await ensureActiveOwnerCount(salonId);
-    if (activeOwners <= 1) {
-      return NextResponse.json({ ok: false, error: "Debe existir al menos un propietario activo." }, { status: 400 });
-    }
-  }
-
-  if (id === currentUserId && !nextActive) {
-    return NextResponse.json({ ok: false, error: "No puedes suspender tu propia cuenta." }, { status: 400 });
-  }
-
-  const updated = await prisma.user.update({
+  const target = await prisma.user.findUnique({
     where: { id },
-    data: {
-      name,
-      email,
-      role: nextRole as UserRole,
-      isActive: Boolean(nextActive),
-      ...(password ? { passwordHash: await bcrypt.hash(password, 10) } : {}),
-    },
-    select: {
-      id: true,
-      name: true,
-      email: true,
-      role: true,
-      isActive: true,
-      createdAt: true,
-      updatedAt: true,
-    },
+    include: { salon: { select: { id: true, name: true, slug: true } } },
   });
 
-  return NextResponse.json({ ok: true, item: updated });
+  if (!target) {
+    return NextResponse.json({ ok: false, error: "Usuario no encontrado" }, { status: 404 });
+  }
+
+  const data: any = {};
+  const salonData: any = {};
+
+  if (typeof body?.email === "string") data.email = body.email.toLowerCase().trim();
+  if (typeof body?.name === "string") data.name = body.name.trim() || null;
+  if (typeof body?.role === "string") {
+    const role = body.role.toUpperCase();
+    if (Object.values(UserRole).includes(role as UserRole)) data.role = role;
+  }
+  if (typeof body?.password === "string" && body.password.trim()) {
+    if (body.password.trim().length < 6) {
+      return NextResponse.json(
+        { ok: false, error: "La contraseña debe tener al menos 6 caracteres" },
+        { status: 400 }
+      );
+    }
+    data.passwordHash = await bcrypt.hash(body.password.trim(), 10);
+  }
+
+  if (typeof body?.salonName === "string") {
+    const salonName = body.salonName.trim();
+    if (!salonName) {
+      return NextResponse.json({ ok: false, error: "El nombre del salón es obligatorio" }, { status: 400 });
+    }
+    salonData.name = salonName;
+    salonData.slug = await uniqueSlug(salonName, target.salonId);
+  }
+
+  const updated = await prisma.$transaction(async (tx) => {
+    if (Object.keys(salonData).length && target.salonId) {
+      await tx.salon.update({
+        where: { id: target.salonId },
+        data: salonData,
+      });
+    }
+
+    return tx.user.update({
+      where: { id },
+      data,
+      include: { salon: { select: { id: true, name: true, slug: true } } },
+    });
+  });
+
+  return NextResponse.json({ ok: true, item: sanitizeUser(updated) });
 }
 
-export async function DELETE(_: NextRequest, { params }: Params) {
-  const { session, response } = await requireAdminSession();
+export async function DELETE(_req: NextRequest, context: { params: Promise<{ id: string }> }) {
+  const { session, response } = await requireManager();
   if (response) return response;
 
-  const { id } = await params;
-  const currentUserId = (session!.user as any).id as string;
-  const salonId = (session!.user as any).salonId as string;
-  const requesterRole = (session!.user as any).role as string;
-
-  const existing = await prisma.user.findFirst({ where: { id, salonId } });
-  if (!existing) {
-    return NextResponse.json({ ok: false, error: "Usuario no encontrado." }, { status: 404 });
-  }
+  const { id } = await context.params;
+  const currentUserId = (session!.user as any).id;
 
   if (id === currentUserId) {
-    return NextResponse.json({ ok: false, error: "No puedes borrar tu propia cuenta." }, { status: 400 });
+    return NextResponse.json(
+      { ok: false, error: "No puedes borrar tu propia cuenta" },
+      { status: 400 }
+    );
   }
 
-  if (existing.role === UserRole.OWNER && !isOwner(requesterRole)) {
-    return NextResponse.json({ ok: false, error: "Solo el propietario puede borrar otra cuenta propietaria." }, { status: 403 });
+  const target = await prisma.user.findUnique({
+    where: { id },
+    select: { id: true, salonId: true },
+  });
+
+  if (!target) {
+    return NextResponse.json({ ok: false, error: "Usuario no encontrado" }, { status: 404 });
   }
 
-  if (existing.role === UserRole.OWNER) {
-    const activeOwners = await ensureActiveOwnerCount(salonId);
-    if (existing.isActive && activeOwners <= 1) {
-      return NextResponse.json({ ok: false, error: "Debe existir al menos un propietario activo." }, { status: 400 });
+  await prisma.$transaction(async (tx) => {
+    await tx.user.delete({ where: { id } });
+
+    if (target.salonId) {
+      const remaining = await tx.user.count({ where: { salonId: target.salonId } });
+      if (remaining === 0) {
+        await tx.salon.delete({ where: { id: target.salonId } });
+      }
     }
-  }
+  });
 
-  await prisma.user.delete({ where: { id } });
-
-  return NextResponse.json({ ok: true, deleted: true });
+  return NextResponse.json({ ok: true });
 }
