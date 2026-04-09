@@ -86,6 +86,11 @@ export function AppHeader({
             <DropdownMenuItem asChild>
               <Link href="/ajustes">Ajustes</Link>
             </DropdownMenuItem>
+            {((session?.user as any)?.role === "OWNER" || (session?.user as any)?.role === "MANAGER") ? (
+              <DropdownMenuItem asChild>
+                <Link href="/admin">Administración</Link>
+              </DropdownMenuItem>
+            ) : null}
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => signOut({ callbackUrl: "/login" })}>
               <LogOut className="mr-2 h-4 w-4" />

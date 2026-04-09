@@ -2,6 +2,7 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
+import { useSession } from "next-auth/react"
 import {
   LayoutDashboard,
   CalendarDays,
@@ -10,6 +11,7 @@ import {
   Scissors,
   UserCog,
   Settings,
+  ShieldCheck,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -21,10 +23,13 @@ const navigation = [
   { name: "Servicios", href: "/servicios", icon: Scissors },
   { name: "Empleados", href: "/empleados", icon: UserCog },
   { name: "Ajustes", href: "/ajustes", icon: Settings },
+  { name: "Administración", href: "/admin", icon: ShieldCheck, adminOnly: true },
 ]
 
 export function AppSidebar() {
   const pathname = usePathname()
+  const { data: session } = useSession()
+  const role = (session?.user as any)?.role as string | undefined
 
   return (
     <aside className="hidden lg:flex lg:w-64 lg:flex-col lg:fixed lg:inset-y-0 bg-sidebar border-r border-sidebar-border">
@@ -38,7 +43,7 @@ export function AppSidebar() {
       </div>
       <nav className="flex-1 px-3 py-4">
         <ul className="flex flex-col gap-1" role="list">
-          {navigation.map((item) => {
+          {navigation.filter((item) => !item.adminOnly || role === "OWNER" || role === "MANAGER").map((item) => {
             const isActive = pathname === item.href || pathname.startsWith(item.href + "/")
             return (
               <li key={item.name}>
