@@ -6,6 +6,7 @@ declare module "next-auth" {
       id: string;
       salonId?: string | null;
       role?: string;
+      staffId?: string | null;
     };
   }
 }

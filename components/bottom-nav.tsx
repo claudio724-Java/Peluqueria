@@ -21,13 +21,21 @@ const baseMobileNav = [
   { name: "Ajustes", href: "/ajustes", icon: Settings },
 ]
 
+const staffMobileNav = [
+  { name: "Citas", href: "/citas", icon: CalendarCheck },
+]
+
 export function BottomNav() {
   const pathname = usePathname()
   const { data: session } = useSession()
-  const isManager = (session?.user as any)?.role === "MANAGER"
-  const mobileNav = isManager
-    ? [...baseMobileNav, { name: "Admin", href: "/admin", icon: Shield }]
-    : baseMobileNav
+  const role = (session?.user as any)?.role
+  const isManager = role === "MANAGER"
+  const isStaff = role === "STAFF"
+  const mobileNav = isStaff
+    ? staffMobileNav
+    : isManager
+      ? [...baseMobileNav, { name: "Admin", href: "/admin", icon: Shield }]
+      : baseMobileNav
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-card lg:hidden" role="navigation" aria-label="Navegacion principal">

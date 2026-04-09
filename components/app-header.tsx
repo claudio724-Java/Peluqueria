@@ -36,6 +36,8 @@ export function AppHeader({
   const { data: session } = useSession();
   const [salons, setSalons] = useState<Salon[]>([]);
   const [selectedSalon, setSelectedSalon] = useState<string>("");
+  const role = (session?.user as any)?.role;
+  const isStaff = role === "STAFF";
 
   useEffect(() => {
     apiGet<{ ok: true; items: Salon[] }>("/api/salons")
@@ -58,6 +60,7 @@ export function AppHeader({
       </div>
 
       <div className="flex items-center gap-2">
+        {!isStaff ? (
         <Select value={selectedSalon} onValueChange={setSelectedSalon}>
           <SelectTrigger className="w-[180px]">
             <SelectValue placeholder="Peluquería" />
@@ -70,8 +73,9 @@ export function AppHeader({
             ))}
           </SelectContent>
         </Select>
+        ) : null}
 
-        {action}
+        {!isStaff ? action : null}
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -88,9 +92,11 @@ export function AppHeader({
                 <Link href="/admin"><Shield className="mr-2 h-4 w-4" />Administración</Link>
               </DropdownMenuItem>
             ) : null}
+{!isStaff ? (
             <DropdownMenuItem asChild>
               <Link href="/ajustes">Ajustes</Link>
             </DropdownMenuItem>
+            ) : null}
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => signOut({ callbackUrl: "/login" })}>
               <LogOut className="mr-2 h-4 w-4" />

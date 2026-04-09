@@ -31,12 +31,18 @@ export async function GET(req: NextRequest) {
   if (response) return response;
   const { searchParams } = new URL(req.url);
   const salonId = (session!.user as any).salonId ?? searchParams.get("salonId");
+  const role = (session!.user as any).role;
+  const staffId = (session!.user as any).staffId ?? null;
   const from = searchParams.get("from");
   const to = searchParams.get("to");
 
   if (!salonId) return jsonError("salonId missing on user/session", 400);
 
   const where: any = { salonId };
+  if (role === "STAFF") {
+    if (!staffId) return jsonError("staffId missing on user/session", 400);
+    where.staffId = staffId;
+  }
   if (from || to) {
     where.startAt = {
       ...(from ? { gte: new Date(from) } : {}),
@@ -56,6 +62,9 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const { session, response } = await requireSession();
   if (response) return response;
+  const role = (session!.user as any).role;
+  if (role === "STAFF") return jsonError("FORBIDDEN", 403);
+
   const body = await req.json().catch(() => null);
   const parsed = AppointmentCreateSchema.safeParse(body);
   if (!parsed.success) return jsonError("Invalid payload", 400, parsed.error.flatten());

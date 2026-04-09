@@ -24,7 +24,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Store, Bell, Clock, Shield, CreditCard } from "lucide-react";
-import { apiGet, apiPatch } from "@/lib/client-api";
+import { apiGet, apiPatch, apiPost } from "@/lib/client-api";
 
 type SalonBusinessHour = {
   dayOfWeek: number;
@@ -47,6 +47,10 @@ type Salon = {
   stripeEnabled: boolean;
   hasStripeWebhookSecret: boolean;
   hasStripeSecretKey: boolean;
+  notifyAppointmentReminder: boolean;
+  notifyBookingConfirmation: boolean;
+  notifyCancellation: boolean;
+  notifyDailySummary: boolean;
   businessHours: SalonBusinessHour[];
 };
 
@@ -113,12 +117,17 @@ export default function AjustesPage() {
   const [loading, setLoading] = useState(true);
   const [savingGeneral, setSavingGeneral] = useState(false);
   const [savingSchedule, setSavingSchedule] = useState(false);
+  const [savingNotifications, setSavingNotifications] = useState(false);
+  const [resettingSalon, setResettingSalon] = useState(false);
 
   const [errorGeneral, setErrorGeneral] = useState<string | null>(null);
   const [successGeneral, setSuccessGeneral] = useState<string | null>(null);
 
   const [errorSchedule, setErrorSchedule] = useState<string | null>(null);
   const [successSchedule, setSuccessSchedule] = useState<string | null>(null);
+  const [errorNotifications, setErrorNotifications] = useState<string | null>(null);
+  const [successNotifications, setSuccessNotifications] = useState<string | null>(null);
+  const [resetError, setResetError] = useState<string | null>(null);
 
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
@@ -131,6 +140,10 @@ export default function AjustesPage() {
   const [schedule, setSchedule] = useState<DaySchedule[]>(buildSchedule([]));
 
   const [stripeEnabled, setStripeEnabled] = useState(false);
+  const [notifyAppointmentReminder, setNotifyAppointmentReminder] = useState(true);
+  const [notifyBookingConfirmation, setNotifyBookingConfirmation] = useState(true);
+  const [notifyCancellation, setNotifyCancellation] = useState(true);
+  const [notifyDailySummary, setNotifyDailySummary] = useState(false);
   const [hasStripeWebhookSecret, setHasStripeWebhookSecret] = useState(false);
   const [hasStripeSecretKey, setHasStripeSecretKey] = useState(false);
 
@@ -162,6 +175,10 @@ export default function AjustesPage() {
         setStripeEnabled(Boolean(salon.stripeEnabled));
         setHasStripeWebhookSecret(Boolean(salon.hasStripeWebhookSecret));
         setHasStripeSecretKey(Boolean(salon.hasStripeSecretKey));
+        setNotifyAppointmentReminder(Boolean(salon.notifyAppointmentReminder));
+        setNotifyBookingConfirmation(Boolean(salon.notifyBookingConfirmation));
+        setNotifyCancellation(Boolean(salon.notifyCancellation));
+        setNotifyDailySummary(Boolean(salon.notifyDailySummary));
       }
     } catch {
       setErrorGeneral("No se pudieron cargar los ajustes del salón.");
@@ -199,6 +216,25 @@ export default function AjustesPage() {
     ]);
   }
 
+  function buildSalonPayload() {
+    return {
+      name: name.trim(),
+      slug: slug.trim(),
+      phone: phone.trim() || null,
+      email: email.trim() || null,
+      address: address.trim() || null,
+      currency,
+      timezone: timezone.trim(),
+      slotIntervalMin: Number(slotIntervalMin || 30),
+      stripeEnabled,
+      notifyAppointmentReminder,
+      notifyBookingConfirmation,
+      notifyCancellation,
+      notifyDailySummary,
+      businessHours: buildBusinessHoursPayload(),
+    };
+  }
+
   async function handleSaveGeneral() {
     setErrorGeneral(null);
     setSuccessGeneral(null);
@@ -226,18 +262,7 @@ export default function AjustesPage() {
     try {
       setSavingGeneral(true);
 
-      await apiPatch("/api/salons", {
-        name: name.trim(),
-        slug: slug.trim(),
-        phone: phone.trim() || null,
-        email: email.trim() || null,
-        address: address.trim() || null,
-        currency,
-        timezone: timezone.trim(),
-        slotIntervalMin: Number(slotIntervalMin),
-        stripeEnabled,
-        businessHours: buildBusinessHoursPayload(),
-      });
+      await apiPatch("/api/salons", buildSalonPayload());
 
       setSuccessGeneral("Cambios guardados correctamente.");
       await loadSalon();
@@ -287,18 +312,7 @@ export default function AjustesPage() {
     try {
       setSavingSchedule(true);
 
-      await apiPatch("/api/salons", {
-        name: name.trim(),
-        slug: slug.trim(),
-        phone: phone.trim() || null,
-        email: email.trim() || null,
-        address: address.trim() || null,
-        currency,
-        timezone: timezone.trim(),
-        slotIntervalMin: Number(slotIntervalMin || 30),
-        stripeEnabled,
-        businessHours: buildBusinessHoursPayload(),
-      });
+      await apiPatch("/api/salons", buildSalonPayload());
 
       setSuccessSchedule("Horarios guardados correctamente.");
       await loadSalon();
@@ -317,18 +331,9 @@ export default function AjustesPage() {
       setSavingStripe(true);
 
       await apiPatch("/api/salons", {
-        name: name.trim(),
-        slug: slug.trim(),
-        phone: phone.trim() || null,
-        email: email.trim() || null,
-        address: address.trim() || null,
-        currency,
-        timezone: timezone.trim(),
-        slotIntervalMin: Number(slotIntervalMin || 30),
-        stripeEnabled,
+        ...buildSalonPayload(),
         stripeWebhookSecret: stripeWebhookSecret.trim() || "",
         stripeSecretKey: stripeSecretKey.trim() || "",
-        businessHours: buildBusinessHoursPayload(),
       });
 
       setStripeWebhookSecret("");
@@ -340,6 +345,36 @@ export default function AjustesPage() {
       setStripeError("No se pudo guardar la configuración de Stripe.");
     } finally {
       setSavingStripe(false);
+    }
+  }
+
+  async function handleSaveNotifications() {
+    setErrorNotifications(null);
+    setSuccessNotifications(null);
+
+    try {
+      setSavingNotifications(true);
+      await apiPatch("/api/salons", buildSalonPayload());
+      setSuccessNotifications("Notificaciones guardadas correctamente.");
+      await loadSalon();
+    } catch {
+      setErrorNotifications("No se pudieron guardar las notificaciones.");
+    } finally {
+      setSavingNotifications(false);
+    }
+  }
+
+  async function handleResetSalon() {
+    setResetError(null);
+    try {
+      setResettingSalon(true);
+      await apiPost("/api/salons/reset", {});
+      setConfirmReset(false);
+      await loadSalon();
+    } catch {
+      setResetError("No se pudieron borrar los datos del salón.");
+    } finally {
+      setResettingSalon(false);
     }
   }
 
@@ -540,6 +575,7 @@ export default function AjustesPage() {
                       Resetear
                     </Button>
                   </div>
+                  {resetError ? <p className="mt-3 text-sm text-red-600">{resetError}</p> : null}
                 </CardContent>
               </Card>
             </div>
@@ -659,46 +695,50 @@ export default function AjustesPage() {
                   </div>
                   <div>
                     <CardTitle className="text-base">Notificaciones</CardTitle>
-                    <CardDescription>Vista pendiente de persistencia</CardDescription>
+                    <CardDescription>Se guardan en base de datos y se exponen en el webhook get_salon_data.</CardDescription>
                   </div>
                 </div>
               </CardHeader>
 
               <CardContent className="space-y-5">
-                {[
-                  {
-                    title: "Recordatorio de cita",
-                    desc: "Enviar recordatorio 24h antes de la cita",
-                    defaultOn: true,
-                  },
-                  {
-                    title: "Confirmación de reserva",
-                    desc: "Enviar confirmación al crear una cita",
-                    defaultOn: true,
-                  },
-                  {
-                    title: "Notificación de cancelación",
-                    desc: "Avisar al cliente cuando se cancela una cita",
-                    defaultOn: true,
-                  },
-                  {
-                    title: "Resumen diario",
-                    desc: "Enviar resumen de citas del día al equipo",
-                    defaultOn: false,
-                  },
-                ].map((item) => (
-                  <div key={item.title} className="flex items-center justify-between gap-4">
-                    <div>
-                      <p className="text-sm font-medium">{item.title}</p>
-                      <p className="text-xs text-muted-foreground">{item.desc}</p>
-                    </div>
-                    <Switch defaultChecked={item.defaultOn} />
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-medium">Recordatorio de cita</p>
+                    <p className="text-xs text-muted-foreground">Enviar recordatorio 24h antes de la cita</p>
                   </div>
-                ))}
+                  <Switch checked={notifyAppointmentReminder} onCheckedChange={setNotifyAppointmentReminder} />
+                </div>
+
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-medium">Confirmación de reserva</p>
+                    <p className="text-xs text-muted-foreground">Enviar confirmación al crear una cita</p>
+                  </div>
+                  <Switch checked={notifyBookingConfirmation} onCheckedChange={setNotifyBookingConfirmation} />
+                </div>
+
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-medium">Notificación de cancelación</p>
+                    <p className="text-xs text-muted-foreground">Avisar al cliente cuando se cancela una cita</p>
+                  </div>
+                  <Switch checked={notifyCancellation} onCheckedChange={setNotifyCancellation} />
+                </div>
+
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-medium">Resumen diario</p>
+                    <p className="text-xs text-muted-foreground">Enviar resumen de citas del día al equipo</p>
+                  </div>
+                  <Switch checked={notifyDailySummary} onCheckedChange={setNotifyDailySummary} />
+                </div>
+
+                {errorNotifications ? <p className="text-sm text-red-600">{errorNotifications}</p> : null}
+                {successNotifications ? <p className="text-sm text-green-600">{successNotifications}</p> : null}
 
                 <div className="flex justify-end">
-                  <Button variant="outline" disabled>
-                    Guardar notificaciones
+                  <Button variant="outline" onClick={handleSaveNotifications} disabled={savingNotifications}>
+                    {savingNotifications ? "Guardando..." : "Guardar notificaciones"}
                   </Button>
                 </div>
               </CardContent>
@@ -756,7 +796,9 @@ export default function AjustesPage() {
         onOpenChange={setConfirmReset}
         title="¿Resetear datos del salón?"
         description="Esta acción es irreversible y eliminará todas las citas y datos asociados."
-        confirmLabel="Sí, resetear"
+        confirmLabel={resettingSalon ? "Reseteando..." : "Sí, resetear"}
+        onConfirm={handleResetSalon}
+        variant="destructive"
       />
     </>
   );

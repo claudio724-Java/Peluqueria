@@ -11,6 +11,9 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
   const { session, response } = await requireSession();
   if (response) return response;
 
+  const role = (session!.user as any).role;
+  if (role === "STAFF") return jsonError("FORBIDDEN", 403);
+
   const salonId = (session!.user as any).salonId;
   const { id } = await ctx.params;
   if (!salonId) return jsonError("salonId missing on user/session", 400);

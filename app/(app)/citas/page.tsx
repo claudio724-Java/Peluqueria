@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useSession } from "next-auth/react";
 import { AppHeader } from "@/components/app-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -57,6 +58,8 @@ function paymentLabel(cita: Cita) {
 }
 
 export default function CitasPage() {
+  const { data: session } = useSession();
+  const isStaff = (session?.user as any)?.role === "STAFF";
   const [items, setItems] = useState<Cita[]>([]);
   const [loading, setLoading] = useState(true);
   const [creatingPaymentFor, setCreatingPaymentFor] = useState<string | null>(null);
@@ -136,7 +139,7 @@ export default function CitasPage() {
     <div className="space-y-6 p-6">
       <AppHeader
         title="Citas"
-        subtitle={loading ? "Cargando..." : "Gestiona las citas y sus cobros"}
+        subtitle={loading ? "Cargando..." : isStaff ? "Consulta tus citas asignadas" : "Gestiona las citas y sus cobros"}
       />
 
       {stripeConfigMessage ? (
@@ -159,7 +162,7 @@ export default function CitasPage() {
                 <TableHead>Empleado</TableHead>
                 <TableHead>Estado</TableHead>
                 <TableHead>Pago</TableHead>
-                <TableHead className="text-right">Acciones</TableHead>
+                <TableHead className="text-right">{isStaff ? "" : "Acciones"}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -205,6 +208,7 @@ export default function CitasPage() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
+{!isStaff ? (<>
                         <Button
                           size="sm"
                           variant="outline"
@@ -229,6 +233,7 @@ export default function CitasPage() {
                         >
                           Cancelar
                         </Button>
+                        </>) : <span className="text-sm text-muted-foreground">Solo lectura</span>}
                       </div>
                     </TableCell>
                   </TableRow>

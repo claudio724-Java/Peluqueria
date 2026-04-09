@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/require-session";
 import { encryptText } from "@/lib/crypto";
+import { sendSalonDataWebhook } from "@/lib/salon-data-webhook";
 
 type BusinessHourInput = {
   dayOfWeek: number;
@@ -15,6 +16,7 @@ export async function GET() {
   if (response) return response;
 
   const salonId = (session!.user as any).salonId;
+  const role = (session!.user as any).role;
 
   if (!salonId) {
     return Response.json({ ok: false, error: "salonId missing on user" }, { status: 400 });
@@ -52,6 +54,11 @@ export async function PATCH(req: Request) {
   if (response) return response;
 
   const salonId = (session!.user as any).salonId;
+  const role = (session!.user as any).role;
+
+  if (role === "STAFF") {
+    return Response.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  }
 
   if (!salonId) {
     return Response.json({ ok: false, error: "salonId missing on user" }, { status: 400 });
@@ -89,7 +96,7 @@ export async function PATCH(req: Request) {
     typeof body.stripeSecretKey === "string" ? body.stripeSecretKey.trim() : undefined;
 
   const updated = await prisma.$transaction(async (tx) => {
-    const salon = await tx.salon.update({
+    await tx.salon.update({
       where: { id: salonId },
       data: {
         name: String(body.name).trim(),
@@ -101,6 +108,10 @@ export async function PATCH(req: Request) {
         timezone: String(body.timezone).trim(),
         slotIntervalMin: body.slotIntervalMin ? Number(body.slotIntervalMin) : 30,
         stripeEnabled: Boolean(body.stripeEnabled),
+        notifyAppointmentReminder: body.notifyAppointmentReminder ?? true,
+        notifyBookingConfirmation: body.notifyBookingConfirmation ?? true,
+        notifyCancellation: body.notifyCancellation ?? true,
+        notifyDailySummary: body.notifyDailySummary ?? false,
         ...(stripeWebhookSecret !== undefined
           ? {
               stripeWebhookSecretEncrypted: stripeWebhookSecret
@@ -153,6 +164,12 @@ export async function PATCH(req: Request) {
     });
   });
 
+  const webhookResult = await sendSalonDataWebhook(salonId).catch((error) => ({
+    delivered: false,
+    skipped: false,
+    reason: error instanceof Error ? error.message : "Webhook delivery failed",
+  }));
+
   return Response.json({
     ok: true,
     item: updated
@@ -164,5 +181,6 @@ export async function PATCH(req: Request) {
           stripeSecretKeyEncrypted: undefined,
         }
       : null,
+    webhook: webhookResult,
   });
 }

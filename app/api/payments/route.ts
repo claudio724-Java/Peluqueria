@@ -12,7 +12,9 @@ export async function GET() {
   if (response) return response;
 
   const salonId = (session!.user as any).salonId;
+  const role = (session!.user as any).role;
   if (!salonId) return jsonError("salonId missing on user/session", 400);
+  if (role === "STAFF") return jsonError("FORBIDDEN", 403);
 
   const items = await prisma.payment.findMany({
     where: { salonId },
@@ -34,6 +36,9 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   const { session, response } = await requireSession();
   if (response) return response;
+
+  const role = (session!.user as any).role;
+  if (role === "STAFF") return jsonError("FORBIDDEN", 403);
 
   const salonId = (session!.user as any).salonId;
   if (!salonId) return jsonError("salonId missing on user/session", 400);

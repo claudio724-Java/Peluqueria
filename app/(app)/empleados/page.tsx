@@ -7,6 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
   DialogContent,
@@ -20,13 +21,21 @@ import { apiDelete, apiGet, apiPatch, apiPost } from "@/lib/client-api";
 type Staff = {
   id: string;
   name: string;
+  email: string | null;
+  phone: string | null;
   role: string | null;
   isActive: boolean;
+  hasAccount: boolean;
+  accountActive: boolean | null;
 };
 
 const emptyForm = {
   name: "",
   role: "",
+  phone: "",
+  email: "",
+  password: "",
+  isActive: true,
 };
 
 export default function EmpleadosPage() {
@@ -50,9 +59,12 @@ export default function EmpleadosPage() {
 
   async function load() {
     setLoading(true);
-    const data = await apiGet<{ ok: true; items: Staff[] }>("/api/staff");
-    setItems(data.items);
-    setLoading(false);
+    try {
+      const data = await apiGet<{ ok: true; items: Staff[] }>("/api/staff");
+      setItems(data.items);
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
@@ -63,30 +75,50 @@ export default function EmpleadosPage() {
     setForm(emptyForm);
   }
 
-  function validate(current: typeof emptyForm) {
-    if (!current.name.trim()) return "El nombre es obligatorio.";
-    return null;
+  function openCreate() {
+    resetForm();
+    setCreateError(null);
+    setCreateOpen(true);
   }
 
-  async function handleCreate(e: FormEvent<HTMLFormElement>) {
+  function openEdit(item: Staff) {
+    setSelected(item);
+    setForm({
+      name: item.name,
+      role: item.role ?? "",
+      phone: item.phone ?? "",
+      email: item.email ?? "",
+      password: "",
+      isActive: item.isActive,
+    });
+    setEditError(null);
+    setEditOpen(true);
+  }
+
+  function openDelete(item: Staff) {
+    setSelected(item);
+    setDeleteError(null);
+    setDeleteOpen(true);
+  }
+
+  async function handleCreate(e: FormEvent) {
     e.preventDefault();
     setCreateError(null);
-
-    const validation = validate(form);
-    if (validation) {
-      setCreateError(validation);
+    if (!form.email.trim() || !form.password.trim()) {
+      setCreateError("El email y la contraseña son obligatorios.");
       return;
     }
 
     try {
       setSavingCreate(true);
-
       await apiPost("/api/staff", {
-        name: form.name.trim(),
-        role: form.role.trim() || null,
-        isActive: true,
+        name: form.name,
+        role: form.role,
+        phone: form.phone,
+        email: form.email,
+        password: form.password,
+        isActive: form.isActive,
       });
-
       setCreateOpen(false);
       resetForm();
       await load();
@@ -97,62 +129,39 @@ export default function EmpleadosPage() {
     }
   }
 
-  function openEdit(staff: Staff) {
-    setSelected(staff);
-    setForm({
-      name: staff.name,
-      role: staff.role ?? "",
-    });
-    setEditError(null);
-    setEditOpen(true);
-  }
-
-  async function handleEdit(e: FormEvent<HTMLFormElement>) {
+  async function handleEdit(e: FormEvent) {
     e.preventDefault();
     if (!selected) return;
-
     setEditError(null);
-    const validation = validate(form);
-    if (validation) {
-      setEditError(validation);
-      return;
-    }
 
     try {
       setSavingEdit(true);
-
       await apiPatch(`/api/staff/${selected.id}`, {
-        name: form.name.trim(),
-        role: form.role.trim() || null,
-        isActive: true,
+        name: form.name,
+        role: form.role,
+        phone: form.phone,
+        email: form.email,
+        password: form.password,
+        isActive: form.isActive,
       });
-
       setEditOpen(false);
       setSelected(null);
       resetForm();
       await load();
     } catch {
-      setEditError("No se pudo modificar el empleado.");
+      setEditError("No se pudo actualizar el empleado.");
     } finally {
       setSavingEdit(false);
     }
   }
 
-  function openDelete(staff: Staff) {
-    setSelected(staff);
-    setDeleteError(null);
-    setDeleteOpen(true);
-  }
-
   async function handleDelete() {
     if (!selected) return;
+    setDeleteError(null);
 
     try {
       setSavingDelete(true);
-      setDeleteError(null);
-
       await apiDelete(`/api/staff/${selected.id}`);
-
       setDeleteOpen(false);
       setSelected(null);
       await load();
@@ -165,54 +174,58 @@ export default function EmpleadosPage() {
 
   return (
     <div className="space-y-6 p-6">
-      <AppHeader
-        title="Empleados"
-        subtitle={loading ? "Cargando..." : "Tu equipo"}
-        action={
-          <Button
-            onClick={() => {
-              resetForm();
-              setCreateError(null);
-              setCreateOpen(true);
-            }}
-          >
-            <Plus className="mr-2 h-4 w-4" />
-            Nuevo empleado
-          </Button>
-        }
-      />
+      <AppHeader title="Empleados" subtitle={loading ? "Cargando..." : "Gestiona el equipo y sus accesos"} />
+
+      <div className="flex justify-end">
+        <Button onClick={openCreate}>
+          <Plus className="mr-2 h-4 w-4" />Añadir empleado
+        </Button>
+      </div>
 
       <Card>
         <CardContent className="p-0">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Nombre</TableHead>
+                <TableHead>Empleado</TableHead>
+                <TableHead>Cuenta</TableHead>
                 <TableHead>Rol</TableHead>
-                <TableHead className="w-[140px]">Acciones</TableHead>
+                <TableHead>Estado</TableHead>
+                <TableHead className="text-right">Acciones</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {items.map((s) => (
-                <TableRow key={s.id}>
-                  <TableCell>{s.name}</TableCell>
-                  <TableCell>{s.role ?? "-"}</TableCell>
+              {items.map((item) => (
+                <TableRow key={item.id}>
                   <TableCell>
-                    <div className="flex gap-2">
-                      <Button variant="outline" size="sm" onClick={() => openEdit(s)}>
-                        <Pencil className="h-4 w-4" />
+                    <div className="font-medium">{item.name}</div>
+                    <div className="text-sm text-muted-foreground">{item.phone || "Sin teléfono"}</div>
+                  </TableCell>
+                  <TableCell>
+                    <div>{item.email || "Sin email"}</div>
+                    <div className="text-sm text-muted-foreground">
+                      {item.hasAccount ? (item.accountActive ? "Cuenta activa" : "Cuenta suspendida") : "Sin cuenta"}
+                    </div>
+                  </TableCell>
+                  <TableCell>{item.role || "Empleado"}</TableCell>
+                  <TableCell>{item.isActive ? "Activo" : "Inactivo"}</TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex justify-end gap-2">
+                      <Button variant="outline" size="sm" onClick={() => openEdit(item)}>
+                        <Pencil className="mr-2 h-4 w-4" />Editar
                       </Button>
-                      <Button variant="destructive" size="sm" onClick={() => openDelete(s)}>
-                        <Trash2 className="h-4 w-4" />
+                      <Button variant="destructive" size="sm" onClick={() => openDelete(item)}>
+                        <Trash2 className="mr-2 h-4 w-4" />Borrar
                       </Button>
                     </div>
                   </TableCell>
                 </TableRow>
               ))}
-              {items.length === 0 ? (
+
+              {!loading && items.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={3} className="py-10 text-center text-sm text-muted-foreground">
-                    No hay empleados.
+                  <TableCell colSpan={5} className="py-10 text-center text-sm text-muted-foreground">
+                    Todavía no hay empleados.
                   </TableCell>
                 </TableRow>
               ) : null}
@@ -224,119 +237,104 @@ export default function EmpleadosPage() {
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Crear empleado</DialogTitle>
+            <DialogTitle>Nuevo empleado</DialogTitle>
           </DialogHeader>
-
-          <form onSubmit={handleCreate} className="space-y-4">
+          <form className="space-y-4" onSubmit={handleCreate}>
             <div className="space-y-2">
               <Label htmlFor="create-name">Nombre</Label>
-              <Input
-                id="create-name"
-                value={form.name}
-                onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
-                placeholder="Ej. María"
-              />
+              <Input id="create-name" value={form.name} onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))} required />
             </div>
-
             <div className="space-y-2">
-              <Label htmlFor="create-role">Rol</Label>
-              <Input
-                id="create-role"
-                value={form.role}
-                onChange={(e) => setForm((p) => ({ ...p, role: e.target.value }))}
-                placeholder="Ej. Estilista"
-              />
+              <Label htmlFor="create-role">Puesto</Label>
+              <Input id="create-role" value={form.role} onChange={(e) => setForm((prev) => ({ ...prev, role: e.target.value }))} placeholder="Colorista, barbero..." />
             </div>
-
+            <div className="space-y-2">
+              <Label htmlFor="create-phone">Teléfono</Label>
+              <Input id="create-phone" value={form.phone} onChange={(e) => setForm((prev) => ({ ...prev, phone: e.target.value }))} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="create-email">Email de acceso</Label>
+              <Input id="create-email" type="email" value={form.email} onChange={(e) => setForm((prev) => ({ ...prev, email: e.target.value }))} required />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="create-password">Contraseña</Label>
+              <Input id="create-password" type="password" minLength={6} value={form.password} onChange={(e) => setForm((prev) => ({ ...prev, password: e.target.value }))} required />
+            </div>
+            <div className="flex items-center justify-between rounded-md border p-3">
+              <div>
+                <p className="text-sm font-medium">Cuenta activa</p>
+                <p className="text-xs text-muted-foreground">Podrá iniciar sesión y ver solo sus citas.</p>
+              </div>
+              <Switch checked={form.isActive} onCheckedChange={(checked) => setForm((prev) => ({ ...prev, isActive: checked }))} />
+            </div>
             {createError ? <p className="text-sm text-red-600">{createError}</p> : null}
-
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>
-                Cancelar
-              </Button>
-              <Button type="submit" disabled={savingCreate}>
-                {savingCreate ? "Guardando..." : "Crear"}
-              </Button>
+              <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>Cancelar</Button>
+              <Button type="submit" disabled={savingCreate}>{savingCreate ? "Guardando..." : "Crear empleado"}</Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
 
-      <Dialog
-        open={editOpen}
-        onOpenChange={(open) => {
-          setEditOpen(open);
-          if (!open) {
-            setSelected(null);
-            resetForm();
-          }
-        }}
-      >
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Modificar empleado</DialogTitle>
+            <DialogTitle>Editar empleado</DialogTitle>
           </DialogHeader>
-
-          <form onSubmit={handleEdit} className="space-y-4">
+          <form className="space-y-4" onSubmit={handleEdit}>
             <div className="space-y-2">
               <Label htmlFor="edit-name">Nombre</Label>
-              <Input
-                id="edit-name"
-                value={form.name}
-                onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
-              />
+              <Input id="edit-name" value={form.name} onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value }))} required />
             </div>
-
             <div className="space-y-2">
-              <Label htmlFor="edit-role">Rol</Label>
-              <Input
-                id="edit-role"
-                value={form.role}
-                onChange={(e) => setForm((p) => ({ ...p, role: e.target.value }))}
-                placeholder="Ej. Barbero, Colorista..."
-              />
+              <Label htmlFor="edit-role">Puesto</Label>
+              <Input id="edit-role" value={form.role} onChange={(e) => setForm((prev) => ({ ...prev, role: e.target.value }))} />
             </div>
-
+            <div className="space-y-2">
+              <Label htmlFor="edit-phone">Teléfono</Label>
+              <Input id="edit-phone" value={form.phone} onChange={(e) => setForm((prev) => ({ ...prev, phone: e.target.value }))} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-email">Email de acceso</Label>
+              <Input id="edit-email" type="email" value={form.email} onChange={(e) => setForm((prev) => ({ ...prev, email: e.target.value }))} required />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-password">Nueva contraseña</Label>
+              <Input id="edit-password" type="password" minLength={6} value={form.password} onChange={(e) => setForm((prev) => ({ ...prev, password: e.target.value }))} placeholder="Déjalo vacío para mantener la actual" />
+            </div>
+            <div className="flex items-center justify-between rounded-md border p-3">
+              <div>
+                <p className="text-sm font-medium">Cuenta activa</p>
+                <p className="text-xs text-muted-foreground">Si la desactivas, el empleado no podrá entrar.</p>
+              </div>
+              <Switch checked={form.isActive} onCheckedChange={(checked) => setForm((prev) => ({ ...prev, isActive: checked }))} />
+            </div>
             {editError ? <p className="text-sm text-red-600">{editError}</p> : null}
-
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setEditOpen(false)}>
-                Cancelar
-              </Button>
-              <Button type="submit" disabled={savingEdit}>
-                {savingEdit ? "Guardando..." : "Guardar cambios"}
-              </Button>
+              <Button type="button" variant="outline" onClick={() => setEditOpen(false)}>Cancelar</Button>
+              <Button type="submit" disabled={savingEdit}>{savingEdit ? "Guardando..." : "Guardar cambios"}</Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
 
-      <Dialog
-        open={deleteOpen}
-        onOpenChange={(open) => {
-          setDeleteOpen(open);
-          if (!open) setSelected(null);
-        }}
-      >
+      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Borrar empleado</DialogTitle>
+            <DialogTitle>Eliminar empleado</DialogTitle>
           </DialogHeader>
-
-          <p className="text-sm text-muted-foreground">
-            ¿Seguro que quieres borrar {selected?.name ? `"${selected.name}"` : "este empleado"}?
-          </p>
-
-          {deleteError ? <p className="text-sm text-red-600">{deleteError}</p> : null}
-
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setDeleteOpen(false)}>
-              Cancelar
-            </Button>
-            <Button variant="destructive" onClick={handleDelete} disabled={savingDelete}>
-              {savingDelete ? "Borrando..." : "Borrar"}
-            </Button>
-          </DialogFooter>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Se eliminará el perfil y su cuenta de acceso. Si tiene citas asociadas, el empleado quedará inactivo.
+            </p>
+            {deleteError ? <p className="text-sm text-red-600">{deleteError}</p> : null}
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setDeleteOpen(false)}>Cancelar</Button>
+              <Button type="button" variant="destructive" onClick={handleDelete} disabled={savingDelete}>
+                {savingDelete ? "Borrando..." : "Confirmar borrado"}
+              </Button>
+            </DialogFooter>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

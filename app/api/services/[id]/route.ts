@@ -11,8 +11,13 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   if (response) return response;
 
   const salonId = (session!.user as any).salonId;
+  const role = (session!.user as any).role;
   const { id } = await params;
   const body = await req.json().catch(() => null);
+
+  if (role === "STAFF") {
+    return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  }
 
   if (!body?.name || !body?.durationMin || body?.priceCents === undefined) {
     return NextResponse.json({ ok: false, error: "Invalid payload" }, { status: 400 });
@@ -32,7 +37,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
       name: String(body.name),
       durationMin: Number(body.durationMin),
       priceCents: Number(body.priceCents),
-      bufferMin: 0,
+      bufferMin: Number(body.bufferMin ?? 0),
       isActive: body.isActive ?? true,
     },
   });
@@ -45,7 +50,12 @@ export async function DELETE(_: NextRequest, { params }: Params) {
   if (response) return response;
 
   const salonId = (session!.user as any).salonId;
+  const role = (session!.user as any).role;
   const { id } = await params;
+
+  if (role === "STAFF") {
+    return NextResponse.json({ ok: false, error: "FORBIDDEN" }, { status: 403 });
+  }
 
   const existing = await prisma.service.findFirst({
     where: { id, salonId },

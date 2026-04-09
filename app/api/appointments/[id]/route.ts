@@ -31,11 +31,17 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
   if (response) return response;
 
   const salonId = (session!.user as any).salonId;
+  const role = (session!.user as any).role;
+  const staffId = (session!.user as any).staffId ?? null;
   const { id } = await ctx.params;
   if (!salonId) return jsonError("salonId missing on user/session", 400);
 
   const item = await prisma.appointment.findFirst({
-    where: { id, salonId },
+    where: {
+      id,
+      salonId,
+      ...(role === "STAFF" ? { staffId } : {}),
+    },
     include: appointmentInclude,
   });
 
@@ -46,6 +52,9 @@ export async function GET(_req: NextRequest, ctx: { params: Promise<{ id: string
 export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const { session, response } = await requireSession();
   if (response) return response;
+
+  const role = (session!.user as any).role;
+  if (role === "STAFF") return jsonError("FORBIDDEN", 403);
 
   const salonId = (session!.user as any).salonId;
   const { id } = await ctx.params;

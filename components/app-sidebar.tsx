@@ -25,13 +25,21 @@ const baseNavigation = [
   { name: "Ajustes", href: "/ajustes", icon: Settings },
 ]
 
+const staffNavigation = [
+  { name: "Citas", href: "/citas", icon: CalendarCheck },
+]
+
 export function AppSidebar() {
   const pathname = usePathname()
   const { data: session } = useSession()
-  const isManager = (session?.user as any)?.role === "MANAGER"
-  const navigation = isManager
-    ? [...baseNavigation, { name: "Administración", href: "/admin", icon: Shield }]
-    : baseNavigation
+  const role = (session?.user as any)?.role
+  const isManager = role === "MANAGER"
+  const isStaff = role === "STAFF"
+  const navigation = isStaff
+    ? staffNavigation
+    : isManager
+      ? [...baseNavigation, { name: "Administración", href: "/admin", icon: Shield }]
+      : baseNavigation
 
   return (
     <aside className="hidden lg:flex lg:w-64 lg:flex-col lg:fixed lg:inset-y-0 bg-sidebar border-r border-sidebar-border">
