@@ -46,9 +46,16 @@ export async function POST(req: NextRequest) {
     const serviceId = (payload as any).serviceId;
     const staffId = (payload as any).staffId;
     const date = (payload as any).date;
+
     if (!salonId || !serviceId || !date) return jsonError("salonId, serviceId and date are required", 400);
 
     const slots = await getAvailability({ salonId, serviceId, staffId, date });
+    const jsDay = new Date(date).getDay();
+
+console.log("DEBUG DAY", {
+  inputDate: date,
+  jsDay,
+});
     return NextResponse.json({ ok: true, intent, slots });
   }
 
