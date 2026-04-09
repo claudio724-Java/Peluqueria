@@ -3,7 +3,6 @@ import { verifyWebhookSignature } from "@/lib/webhook";
 import { getAvailability } from "@/lib/availability";
 import { prisma } from "@/lib/prisma";
 import { createPaymentLink } from "@/lib/payments/service";
-import { buildSalonDataPayload } from "@/lib/salon-data-webhook";
 
 function jsonError(message: string, status = 400, details?: unknown) {
   return NextResponse.json({ ok: false, error: message, details }, { status });
@@ -18,6 +17,19 @@ function paymentMessage(url: string, amountCents: number, currency: string) {
   return `Aquí tienes tu enlace de pago: ${url}\nImporte: ${amount}`;
 }
 
+/**
+ * Webhook pensado para Make:
+ * - POST JSON
+ * - Header opcional: X-Signature: sha256=<hex>
+ * - Secret: WEBHOOK_SECRET
+ *
+ * Intents soportados:
+ * - check_availability
+ * - create_appointment
+ * - cancel_appointment
+ * - create_payment_link
+ * - get_payment_status
+ */
 export async function POST(req: NextRequest) {
   const secret = process.env.WEBHOOK_SECRET;
   const raw = await req.text();
@@ -41,36 +53,16 @@ export async function POST(req: NextRequest) {
   const intent = (payload as any).intent as string | undefined;
   if (!intent) return jsonError("Missing intent", 400);
 
-if (intent === "check_availability") {
-  const salonId = (payload as any).salonId;
-  const serviceId = (payload as any).serviceId;
-  const staffId = (payload as any).staffId;
-  const date = (payload as any).date;
+  if (intent === "check_availability") {
+    const salonId = (payload as any).salonId;
+    const serviceId = (payload as any).serviceId;
+    const staffId = (payload as any).staffId;
+    const date = (payload as any).date;
+    if (!salonId || !serviceId || !date) return jsonError("salonId, serviceId and date are required", 400);
 
-  if (!salonId || !serviceId || !date) {
-    return jsonError("salonId, serviceId and date are required", 400);
+    const slots = await getAvailability({ salonId, serviceId, staffId, date });
+    return NextResponse.json({ ok: true, intent, slots });
   }
-
-  const [year, month, day] = date.split("-").map(Number);
-  const jsDay = new Date(year, month - 1, day).getDay();
-  const dayOfWeek = jsDay === 0 ? 7 : jsDay;
-
-  console.log("DEBUG DAY", {
-    inputDate: date,
-    jsDay,
-    dayOfWeek,
-  });
-
-  const slots = await getAvailability({
-    salonId,
-    serviceId,
-    staffId,
-    date,
-    dayOfWeek,
-  });
-
-  return NextResponse.json({ ok: true, intent, slots });
-}
 
   if (intent === "create_appointment") {
     const { salonId, serviceId, staffId, startAt, customer } = payload as any;
@@ -235,21 +227,140 @@ if (intent === "check_availability") {
       currency: payment.currency,
     });
   }
+  // ... otros intents arriba
 
-  if (intent === "get_salon_data") {
+  if (intent === "get_payment_status") {
+    const paymentId = (payload as any).paymentId as string | undefined;
+    const appointmentId = (payload as any).appointmentId as string | undefined;
+    const salonId = (payload as any).salonId as string | undefined;
+
+    if (!paymentId && !(appointmentId && salonId)) {
+      return jsonError("paymentId or (appointmentId + salonId) is required", 400);
+    }
+
+    const payment = paymentId
+      ? await prisma.payment.findUnique({ where: { id: paymentId } })
+      : await prisma.payment.findFirst({
+          where: { appointmentId, salonId },
+          orderBy: { createdAt: "desc" },
+        });
+
+    if (!payment) return jsonError("Payment not found", 404);
+
+    return NextResponse.json({
+      ok: true,
+      intent,
+      paymentId: payment.id,
+      status: payment.status,
+      paidAt: payment.paidAt,
+      url: payment.providerCheckoutUrl,
+      amountCents: payment.amountCents,
+      currency: payment.currency,
+    });
+  }
+
+    if (intent === "get_salon_data") {
     const salonId = (payload as any).salonId as string | undefined;
 
     if (!salonId) {
       return jsonError("salonId is required", 400);
     }
 
-    const salonPayload = await buildSalonDataPayload(salonId);
-    if (!salonPayload) {
+    const salon = await prisma.salon.findUnique({
+      where: { id: salonId },
+      include: {
+        businessHours: {
+          orderBy: [{ dayOfWeek: "asc" }, { shift: "asc" }],
+        },
+        staff: {
+          where: { isActive: true },
+          orderBy: { name: "asc" },
+        },
+        services: {
+          where: { isActive: true },
+          orderBy: { name: "asc" },
+        },
+      },
+    });
+
+    if (!salon) {
       return jsonError("Salon not found", 404);
     }
 
-    return NextResponse.json(salonPayload);
-  }
+    const hasStripeSecretKey = Boolean(salon.stripeSecretKeyEncrypted);
+const hasStripeWebhookSecret = Boolean(salon.stripeWebhookSecretEncrypted);
+const hasEnvStripeWebhookSecret = Boolean(process.env.STRIPE_WEBHOOK_SECRET);
 
+return NextResponse.json({
+  ok: true,
+  intent,
+  salon: {
+    id: salon.id,
+    name: salon.name,
+    slug: salon.slug,
+    phone: salon.phone,
+    email: salon.email,
+    address: salon.address,
+    currency: salon.currency,
+    timezone: salon.timezone,
+    slotIntervalMin: salon.slotIntervalMin,
+
+    stripeEnabled: Boolean(salon.stripeEnabled),
+    hasStripeSecretKey,
+    hasStripeWebhookSecret,
+    hasEnvStripeWebhookSecret,
+
+    canUseStripePaymentLinks:
+      Boolean(salon.stripeEnabled) &&
+      hasStripeSecretKey &&
+      (hasStripeWebhookSecret || hasEnvStripeWebhookSecret),
+
+    stripeMode:
+      hasStripeWebhookSecret && hasEnvStripeWebhookSecret
+        ? "mixed"
+        : hasStripeWebhookSecret
+          ? "salon"
+          : hasEnvStripeWebhookSecret
+            ? "env"
+            : "none",
+
+    createdAt: salon.createdAt,
+    updatedAt: salon.updatedAt,
+  },
+  horarios: salon.businessHours.map((item) => ({
+    id: item.id,
+    salonId: item.salonId,
+    dayOfWeek: item.dayOfWeek,
+    shift: item.shift,
+    isOpen: item.isOpen,
+    startMin: item.startMin,
+    endMin: item.endMin,
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt,
+  })),
+  trabajadores: salon.staff.map((staff) => ({
+    id: staff.id,
+    salonId: staff.salonId,
+    name: staff.name,
+    phone: staff.phone,
+    role: staff.role,
+    isActive: staff.isActive,
+    createdAt: staff.createdAt,
+    updatedAt: staff.updatedAt,
+  })),
+  servicios: salon.services.map((service) => ({
+    id: service.id,
+    salonId: service.salonId,
+    name: service.name,
+    durationMin: service.durationMin,
+    priceCents: service.priceCents,
+    bufferMin: service.bufferMin,
+    isActive: service.isActive,
+    createdAt: service.createdAt,
+    updatedAt: service.updatedAt,
+  })),
+});
+  }
   return jsonError(`Unknown intent: ${intent}`, 400);
 }
+
