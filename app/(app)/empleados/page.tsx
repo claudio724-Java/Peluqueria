@@ -1,7 +1,7 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import { Clock3, Pencil, Plus, Trash2 } from "lucide-react";
 import { AppHeader } from "@/components/app-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -29,6 +29,20 @@ type Staff = {
   accountActive: boolean | null;
 };
 
+type MeResponse = {
+  ok: true;
+  user: {
+    role?: string;
+  };
+};
+
+type ScheduleRow = {
+  dayOfWeek: number;
+  enabled: boolean;
+  start: string;
+  end: string;
+};
+
 const emptyForm = {
   name: "",
   role: "",
@@ -38,30 +52,84 @@ const emptyForm = {
   isActive: true,
 };
 
+const dayLabels = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
+
+const defaultScheduleRows: ScheduleRow[] = dayLabels.map((_, dayOfWeek) => ({
+  dayOfWeek,
+  enabled: dayOfWeek >= 1 && dayOfWeek <= 5,
+  start: "09:00",
+  end: "20:00",
+}));
+
+function minToTime(value: number) {
+  const hours = Math.floor(value / 60)
+    .toString()
+    .padStart(2, "0");
+  const mins = (value % 60).toString().padStart(2, "0");
+  return `${hours}:${mins}`;
+}
+
+function timeToMin(value: string) {
+  const [hours, mins] = value.split(":").map(Number);
+  return hours * 60 + mins;
+}
+
+function buildScheduleRows(items: { dayOfWeek: number; startMin: number; endMin: number }[]): ScheduleRow[] {
+  const map = new Map(items.map((item) => [item.dayOfWeek, item]));
+  return defaultScheduleRows.map((row) => {
+    const current = map.get(row.dayOfWeek);
+    if (!current) return { ...row };
+    return {
+      dayOfWeek: row.dayOfWeek,
+      enabled: true,
+      start: minToTime(current.startMin),
+      end: minToTime(current.endMin),
+    };
+  });
+}
+
 export default function EmpleadosPage() {
   const [items, setItems] = useState<Staff[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isOwner, setIsOwner] = useState(false);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [scheduleOpen, setScheduleOpen] = useState(false);
 
   const [savingCreate, setSavingCreate] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
   const [savingDelete, setSavingDelete] = useState(false);
+  const [savingSchedule, setSavingSchedule] = useState(false);
+  const [loadingSchedule, setLoadingSchedule] = useState(false);
 
   const [createError, setCreateError] = useState<string | null>(null);
   const [editError, setEditError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [scheduleError, setScheduleError] = useState<string | null>(null);
 
   const [form, setForm] = useState(emptyForm);
   const [selected, setSelected] = useState<Staff | null>(null);
+  const [scheduleRows, setScheduleRows] = useState<ScheduleRow[]>(defaultScheduleRows);
+
+  const scheduleSummary = useMemo(() => {
+    const enabled = scheduleRows.filter((row) => row.enabled);
+    if (!enabled.length) return "Sin horario configurado";
+    return enabled
+      .map((row) => `${dayLabels[row.dayOfWeek]} ${row.start}-${row.end}`)
+      .join(" · ");
+  }, [scheduleRows]);
 
   async function load() {
     setLoading(true);
     try {
-      const data = await apiGet<{ ok: true; items: Staff[] }>("/api/staff");
+      const [data, me] = await Promise.all([
+        apiGet<{ ok: true; items: Staff[] }>("/api/staff"),
+        apiGet<MeResponse>("/api/me"),
+      ]);
       setItems(data.items);
+      setIsOwner(me.user?.role === "OWNER");
     } finally {
       setLoading(false);
     }
@@ -99,6 +167,30 @@ export default function EmpleadosPage() {
     setSelected(item);
     setDeleteError(null);
     setDeleteOpen(true);
+  }
+
+  async function openSchedule(item: Staff) {
+    if (!isOwner) return;
+    setSelected(item);
+    setScheduleOpen(true);
+    setScheduleError(null);
+    setLoadingSchedule(true);
+    try {
+      const data = await apiGet<{
+        ok: true;
+        staff: {
+          id: string;
+          name: string;
+          schedules: { dayOfWeek: number; startMin: number; endMin: number }[];
+        };
+      }>(`/api/staff/${item.id}/schedule`);
+      setScheduleRows(buildScheduleRows(data.staff.schedules));
+    } catch {
+      setScheduleError("No se pudo cargar el horario del empleado.");
+      setScheduleRows(defaultScheduleRows);
+    } finally {
+      setLoadingSchedule(false);
+    }
   }
 
   async function handleCreate(e: FormEvent) {
@@ -172,6 +264,46 @@ export default function EmpleadosPage() {
     }
   }
 
+  async function handleSaveSchedule() {
+    if (!selected) return;
+    setScheduleError(null);
+
+    const invalid = scheduleRows.find((row) => row.enabled && timeToMin(row.start) >= timeToMin(row.end));
+    if (invalid) {
+      setScheduleError(`Revisa ${dayLabels[invalid.dayOfWeek]}: la hora de inicio debe ser menor que la de fin.`);
+      return;
+    }
+
+    try {
+      setSavingSchedule(true);
+      const schedules = scheduleRows
+        .filter((row) => row.enabled)
+        .map((row) => ({
+          dayOfWeek: row.dayOfWeek,
+          startMin: timeToMin(row.start),
+          endMin: timeToMin(row.end),
+        }));
+
+      const res = await fetch(`/api/staff/${selected.id}/schedule`, {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ schedules }),
+      });
+
+      if (!res.ok) {
+        throw new Error("PUT failed");
+      }
+
+      setScheduleOpen(false);
+      setSelected(null);
+    } catch {
+      setScheduleError("No se pudo guardar el horario del empleado.");
+    } finally {
+      setSavingSchedule(false);
+    }
+  }
+
   return (
     <div className="space-y-6 p-6">
       <AppHeader title="Empleados" subtitle={loading ? "Cargando..." : "Gestiona el equipo y sus accesos"} />
@@ -211,6 +343,11 @@ export default function EmpleadosPage() {
                   <TableCell>{item.isActive ? "Activo" : "Inactivo"}</TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-2">
+                      {isOwner ? (
+                        <Button variant="outline" size="sm" onClick={() => openSchedule(item)}>
+                          <Clock3 className="mr-2 h-4 w-4" />Horario
+                        </Button>
+                      ) : null}
                       <Button variant="outline" size="sm" onClick={() => openEdit(item)}>
                         <Pencil className="mr-2 h-4 w-4" />Editar
                       </Button>
@@ -332,6 +469,89 @@ export default function EmpleadosPage() {
               <Button type="button" variant="outline" onClick={() => setDeleteOpen(false)}>Cancelar</Button>
               <Button type="button" variant="destructive" onClick={handleDelete} disabled={savingDelete}>
                 {savingDelete ? "Borrando..." : "Confirmar borrado"}
+              </Button>
+            </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={scheduleOpen} onOpenChange={setScheduleOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Horario de {selected?.name || "empleado"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Solo los usuarios owner pueden editar el horario individual del personal. Estos bloques se usan para calcular la disponibilidad.
+            </p>
+
+            {loadingSchedule ? (
+              <p className="text-sm text-muted-foreground">Cargando horario...</p>
+            ) : (
+              <div className="space-y-3">
+                {scheduleRows.map((row, index) => (
+                  <div key={row.dayOfWeek} className="grid grid-cols-[120px_90px_1fr_1fr] items-center gap-3 rounded-md border p-3">
+                    <div className="font-medium">{dayLabels[row.dayOfWeek]}</div>
+                    <div className="flex items-center gap-2">
+                      <Switch
+                        checked={row.enabled}
+                        onCheckedChange={(checked) =>
+                          setScheduleRows((prev) =>
+                            prev.map((item, itemIndex) =>
+                              itemIndex === index ? { ...item, enabled: checked } : item
+                            )
+                          )
+                        }
+                      />
+                      <span className="text-sm text-muted-foreground">{row.enabled ? "Abierto" : "Libre"}</span>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor={`start-${row.dayOfWeek}`}>Inicio</Label>
+                      <Input
+                        id={`start-${row.dayOfWeek}`}
+                        type="time"
+                        value={row.start}
+                        disabled={!row.enabled}
+                        onChange={(e) =>
+                          setScheduleRows((prev) =>
+                            prev.map((item, itemIndex) =>
+                              itemIndex === index ? { ...item, start: e.target.value } : item
+                            )
+                          )
+                        }
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor={`end-${row.dayOfWeek}`}>Fin</Label>
+                      <Input
+                        id={`end-${row.dayOfWeek}`}
+                        type="time"
+                        value={row.end}
+                        disabled={!row.enabled}
+                        onChange={(e) =>
+                          setScheduleRows((prev) =>
+                            prev.map((item, itemIndex) =>
+                              itemIndex === index ? { ...item, end: e.target.value } : item
+                            )
+                          )
+                        }
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="rounded-md bg-muted/50 p-3 text-sm text-muted-foreground">
+              Resumen: {scheduleSummary}
+            </div>
+
+            {scheduleError ? <p className="text-sm text-red-600">{scheduleError}</p> : null}
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setScheduleOpen(false)}>Cancelar</Button>
+              <Button type="button" onClick={handleSaveSchedule} disabled={savingSchedule || loadingSchedule}>
+                {savingSchedule ? "Guardando..." : "Guardar horario"}
               </Button>
             </DialogFooter>
           </div>
