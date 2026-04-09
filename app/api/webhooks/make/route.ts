@@ -41,23 +41,36 @@ export async function POST(req: NextRequest) {
   const intent = (payload as any).intent as string | undefined;
   if (!intent) return jsonError("Missing intent", 400);
 
-  if (intent === "check_availability") {
-    const salonId = (payload as any).salonId;
-    const serviceId = (payload as any).serviceId;
-    const staffId = (payload as any).staffId;
-    const date = (payload as any).date;
+if (intent === "check_availability") {
+  const salonId = (payload as any).salonId;
+  const serviceId = (payload as any).serviceId;
+  const staffId = (payload as any).staffId;
+  const date = (payload as any).date;
 
-    if (!salonId || !serviceId || !date) return jsonError("salonId, serviceId and date are required", 400);
-
-    const slots = await getAvailability({ salonId, serviceId, staffId, date });
-    const jsDay = new Date(date).getDay();
-
-console.log("DEBUG DAY", {
-  inputDate: date,
-  jsDay,
-});
-    return NextResponse.json({ ok: true, intent, slots });
+  if (!salonId || !serviceId || !date) {
+    return jsonError("salonId, serviceId and date are required", 400);
   }
+
+  const [year, month, day] = date.split("-").map(Number);
+  const jsDay = new Date(year, month - 1, day).getDay();
+  const dayOfWeek = jsDay === 0 ? 7 : jsDay;
+
+  console.log("DEBUG DAY", {
+    inputDate: date,
+    jsDay,
+    dayOfWeek,
+  });
+
+  const slots = await getAvailability({
+    salonId,
+    serviceId,
+    staffId,
+    date,
+    dayOfWeek,
+  });
+
+  return NextResponse.json({ ok: true, intent, slots });
+}
 
   if (intent === "create_appointment") {
     const { salonId, serviceId, staffId, startAt, customer } = payload as any;
