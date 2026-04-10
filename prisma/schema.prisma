@@ -102,6 +102,8 @@ model Salon {
   users          User[]
   messageLogs    MessageLog[]
   payments       Payment[]
+
+  
 }
 
 model SalonBusinessHour {
