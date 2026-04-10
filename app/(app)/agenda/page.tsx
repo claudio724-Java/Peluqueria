@@ -22,6 +22,13 @@ type SalonBusinessHour = {
   endMin: number | null
 }
 
+function formatLocalDate(date: Date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, "0")
+  const day = String(date.getDate()).padStart(2, "0")
+  return `${year}-${month}-${day}`
+}
+
 function buildWeekDates(baseDateISO: string) {
   const base = new Date(`${baseDateISO}T00:00:00`)
   const day = base.getDay()
@@ -29,23 +36,27 @@ function buildWeekDates(baseDateISO: string) {
   const monday = new Date(base)
   monday.setDate(base.getDate() + diffToMonday)
 
-  const labels = ["Lun", "Mar", "Mie", "Jue", "Vie", "Sab"]
+  const labels = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"]
   const out: { day: string; date: string; full: string }[] = []
+
   for (let i = 0; i < 6; i++) {
     const d = new Date(monday)
     d.setDate(monday.getDate() + i)
+
     out.push({
       day: labels[i],
       date: String(d.getDate()),
-      full: d.toISOString().slice(0, 10),
+      full: formatLocalDate(d),
     })
   }
+
   return out
 }
 
 function startOfDayISO(dateISO: string) {
   return new Date(`${dateISO}T00:00:00`).toISOString()
 }
+
 function endOfDayISO(dateISO: string) {
   return new Date(`${dateISO}T23:59:59.999`).toISOString()
 }
@@ -90,9 +101,7 @@ function buildVisibleHours(
 }
 
 export default function AgendaPage() {
-  const [selectedDate, setSelectedDate] = useState(() =>
-    new Date().toISOString().slice(0, 10)
-  )
+  const [selectedDate, setSelectedDate] = useState(() => formatLocalDate(new Date()))
   const [selectedEmpleado, setSelectedEmpleado] = useState<string | null>(null)
 
   const [appointments, setAppointments] = useState<Cita[]>([])
@@ -114,33 +123,36 @@ export default function AgendaPage() {
 
   async function loadDay(dateISO: string) {
     setLoading(true)
-    const from = startOfDayISO(dateISO)
-    const to = endOfDayISO(dateISO)
 
-    const [a, s, salonRes] = await Promise.all([
-      apiGet<ApiAppointmentsResponse>(
-        `/api/appointments?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
-      ),
-      apiGet<ApiStaffResponse>(`/api/staff`),
-      apiGet<ApiSalonsResponse>(`/api/salons`),
-    ])
+    try {
+      const from = startOfDayISO(dateISO)
+      const to = endOfDayISO(dateISO)
 
-    setAppointments((a.items ?? []).map(mapAppointmentToCita))
+      const [a, s, salonRes] = await Promise.all([
+        apiGet<ApiAppointmentsResponse>(
+          `/api/appointments?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
+        ),
+        apiGet<ApiStaffResponse>(`/api/staff`),
+        apiGet<ApiSalonsResponse>(`/api/salons`),
+      ])
 
-    setStaff(
-      (s.items ?? []).map((x: any) => ({
-        id: x.id,
-        nombre: x.name ?? x.nombre ?? "Empleado",
-        color: x.color ?? "#64748b",
-        activo: (x.isActive ?? x.activo ?? true) === true,
-      }))
-    )
+      setAppointments((a.items ?? []).map(mapAppointmentToCita))
 
-    const salon = salonRes.items?.[0]
-    setBusinessHours(salon?.businessHours ?? [])
-    setSlotIntervalMin(salon?.slotIntervalMin ?? 30)
+      setStaff(
+        (s.items ?? []).map((x: any) => ({
+          id: x.id,
+          nombre: x.name ?? x.nombre ?? "Empleado",
+          color: x.color ?? "#64748b",
+          activo: (x.isActive ?? x.activo ?? true) === true,
+        }))
+      )
 
-    setLoading(false)
+      const salon = salonRes.items?.[0]
+      setBusinessHours(salon?.businessHours ?? [])
+      setSlotIntervalMin(salon?.slotIntervalMin ?? 30)
+    } finally {
+      setLoading(false)
+    }
   }
 
   useEffect(() => {
@@ -159,7 +171,7 @@ export default function AgendaPage() {
     <>
       <AppHeader
         title="Agenda"
-        description={loading ? "Cargando..." : "Vista diaria de citas"}
+        subtitle={loading ? "Cargando..." : "Vista diaria de citas"}
       />
 
       <main className="p-4 lg:p-6">
@@ -173,7 +185,7 @@ export default function AgendaPage() {
                 onClick={() => {
                   const d = new Date(`${selectedDate}T00:00:00`)
                   d.setDate(d.getDate() - 7)
-                  setSelectedDate(d.toISOString().slice(0, 10))
+                  setSelectedDate(formatLocalDate(d))
                 }}
               >
                 <ChevronLeft className="h-4 w-4" />
@@ -203,7 +215,7 @@ export default function AgendaPage() {
                 onClick={() => {
                   const d = new Date(`${selectedDate}T00:00:00`)
                   d.setDate(d.getDate() + 7)
-                  setSelectedDate(d.toISOString().slice(0, 10))
+                  setSelectedDate(formatLocalDate(d))
                 }}
               >
                 <ChevronRight className="h-4 w-4" />
@@ -252,7 +264,9 @@ export default function AgendaPage() {
                   return (
                     <div key={hour} className="flex min-h-[56px]">
                       <div className="w-16 shrink-0 flex items-start justify-end pr-3 pt-3 border-r border-border">
-                        <span className="text-xs font-medium text-muted-foreground">{hour}</span>
+                        <span className="text-xs font-medium text-muted-foreground">
+                          {hour}
+                        </span>
                       </div>
 
                       <div className="flex-1 p-2 flex flex-col gap-1.5">
@@ -270,11 +284,12 @@ export default function AgendaPage() {
                                 {cita.cliente.nombre}
                               </p>
                               <p className="text-xs text-muted-foreground truncate">
-                                {cita.servicio.nombre} ({cita.duracion}min) - {cita.empleado.nombre}
+                                {cita.servicio.nombre} ({cita.duracion}min) -{" "}
+                                {cita.empleado.nombre}
                               </p>
                             </div>
 
-                            <AppointmentStatusBadge estado={cita.estado} />
+                            <AppointmentStatusBadge status={cita.estado} />
                           </div>
                         ))}
                       </div>
