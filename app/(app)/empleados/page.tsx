@@ -178,13 +178,15 @@ export default function EmpleadosPage() {
     try {
       const data = await apiGet<{
         ok: true;
-        staff: {
+        staff?: {
           id: string;
           name: string;
           schedules: { dayOfWeek: number; startMin: number; endMin: number }[];
         };
+        schedules?: { dayOfWeek: number; startMin: number; endMin: number }[];
       }>(`/api/staff/${item.id}/schedule`);
-      setScheduleRows(buildScheduleRows(data.staff.schedules));
+      const schedules = data.staff?.schedules ?? data.schedules ?? [];
+      setScheduleRows(buildScheduleRows(schedules));
     } catch {
       setScheduleError("No se pudo cargar el horario del empleado.");
       setScheduleRows(defaultScheduleRows);

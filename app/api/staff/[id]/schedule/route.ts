@@ -3,6 +3,12 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 
+function normalizeDayOfWeek(value: number) {
+  if (value >= 0 && value <= 6) return value;
+  if (value === 7) return 0;
+  return value;
+}
+
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
   if (!session?.user || session.user.role !== "OWNER" || !session.user.salonId) {
@@ -13,6 +19,10 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
     where: {
       id: params.id,
       salonId: session.user.salonId,
+    },
+    select: {
+      id: true,
+      name: true,
     },
   });
 
@@ -25,14 +35,23 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
     orderBy: [{ dayOfWeek: "asc" }, { startMin: "asc" }],
   });
 
-  return NextResponse.json({ ok: true, schedules });
+  const normalizedSchedules = schedules.map((schedule) => ({
+    ...schedule,
+    dayOfWeek: normalizeDayOfWeek(schedule.dayOfWeek),
+  }));
+
+  return NextResponse.json({
+    ok: true,
+    staff: {
+      ...staff,
+      schedules: normalizedSchedules,
+    },
+    schedules: normalizedSchedules,
+  });
 }
 
 export async function PUT(req: Request, { params }: { params: { id: string } }) {
   const session = await getServerSession(authOptions);
-
-  console.log("SESSION DEBUG", JSON.stringify(session, null, 2));
-  console.log("USER DEBUG", session?.user);
 
   if (!session?.user || session.user.role !== "OWNER" || !session.user.salonId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
@@ -53,7 +72,12 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
     return NextResponse.json({ error: "Staff not found" }, { status: 404 });
   }
 
-  for (const s of schedules) {
+  const normalizedSchedules = schedules.map((s: any) => ({
+    ...s,
+    dayOfWeek: normalizeDayOfWeek(s.dayOfWeek),
+  }));
+
+  for (const s of normalizedSchedules) {
     if (
       typeof s.dayOfWeek !== "number" ||
       typeof s.startMin !== "number" ||
@@ -62,8 +86,8 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
       return NextResponse.json({ error: "Invalid schedule payload" }, { status: 400 });
     }
 
-    if (s.dayOfWeek < 1 || s.dayOfWeek > 7) {
-      return NextResponse.json({ error: "dayOfWeek must be between 1 and 7" }, { status: 400 });
+    if (s.dayOfWeek < 0 || s.dayOfWeek > 6) {
+      return NextResponse.json({ error: "dayOfWeek must be between 0 and 6" }, { status: 400 });
     }
 
     if (s.startMin < 0 || s.endMin > 1440 || s.startMin >= s.endMin) {
@@ -71,13 +95,21 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
     }
   }
 
+  const seenDays = new Set<number>();
+  for (const s of normalizedSchedules) {
+    if (seenDays.has(s.dayOfWeek)) {
+      return NextResponse.json({ error: "Solo se permite un horario por día." }, { status: 400 });
+    }
+    seenDays.add(s.dayOfWeek);
+  }
+
   await prisma.staffSchedule.deleteMany({
     where: { staffId: staff.id },
   });
 
-  if (schedules.length > 0) {
+  if (normalizedSchedules.length > 0) {
     await prisma.staffSchedule.createMany({
-      data: schedules.map((s: any) => ({
+      data: normalizedSchedules.map((s: any) => ({
         staffId: staff.id,
         dayOfWeek: s.dayOfWeek,
         startMin: s.startMin,
