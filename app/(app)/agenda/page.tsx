@@ -22,8 +22,20 @@ type SalonBusinessHour = {
   endMin: number | null
 }
 
+function dateToISO(date: Date) {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, "0")
+  const d = String(date.getDate()).padStart(2, "0")
+  return `${y}-${m}-${d}`
+}
+
+function parseLocalDate(dateISO: string) {
+  const [y, m, d] = dateISO.split("-").map(Number)
+  return new Date(y, (m ?? 1) - 1, d ?? 1, 12, 0, 0, 0)
+}
+
 function buildWeekDates(baseDateISO: string) {
-  const base = new Date(`${baseDateISO}T00:00:00`)
+  const base = parseLocalDate(baseDateISO)
   const day = base.getDay()
   const diffToMonday = day === 0 ? -6 : 1 - day
   const monday = new Date(base)
@@ -37,7 +49,7 @@ function buildWeekDates(baseDateISO: string) {
     out.push({
       day: labels[i],
       date: String(d.getDate()),
-      full: d.toISOString().slice(0, 10),
+      full: dateToISO(d),
     })
   }
   return out
@@ -91,7 +103,7 @@ function buildVisibleHours(
 
 export default function AgendaPage() {
   const [selectedDate, setSelectedDate] = useState(() =>
-    new Date().toISOString().slice(0, 10)
+    dateToISO(new Date())
   )
   const [selectedEmpleado, setSelectedEmpleado] = useState<string | null>(null)
 
@@ -171,9 +183,9 @@ export default function AgendaPage() {
                 size="icon"
                 className="shrink-0 h-8 w-8"
                 onClick={() => {
-                  const d = new Date(`${selectedDate}T00:00:00`)
+                  const d = parseLocalDate(selectedDate)
                   d.setDate(d.getDate() - 7)
-                  setSelectedDate(d.toISOString().slice(0, 10))
+                  setSelectedDate(dateToISO(d))
                 }}
               >
                 <ChevronLeft className="h-4 w-4" />
@@ -201,9 +213,9 @@ export default function AgendaPage() {
                 size="icon"
                 className="shrink-0 h-8 w-8"
                 onClick={() => {
-                  const d = new Date(`${selectedDate}T00:00:00`)
+                  const d = parseLocalDate(selectedDate)
                   d.setDate(d.getDate() + 7)
-                  setSelectedDate(d.toISOString().slice(0, 10))
+                  setSelectedDate(dateToISO(d))
                 }}
               >
                 <ChevronRight className="h-4 w-4" />
