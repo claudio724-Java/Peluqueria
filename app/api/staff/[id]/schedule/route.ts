@@ -31,6 +31,9 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
 export async function PUT(req: Request, { params }: { params: { id: string } }) {
   const session = await getServerSession();
 
+  console.log("SESSION DEBUG", JSON.stringify(session, null, 2));
+  console.log("USER DEBUG", session?.user);
+
   if (!session?.user || session.user.role !== "OWNER" || !session.user.salonId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
   }
