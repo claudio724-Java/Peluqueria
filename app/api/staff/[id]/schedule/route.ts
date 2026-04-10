@@ -29,7 +29,7 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
 }
 
 export async function PUT(req: Request, { params }: { params: { id: string } }) {
-  const session = await getServerSession();
+  const session = await getServerSession(authOptions);
 
   console.log("SESSION DEBUG", JSON.stringify(session, null, 2));
   console.log("USER DEBUG", session?.user);
