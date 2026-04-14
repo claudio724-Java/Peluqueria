@@ -211,6 +211,10 @@ export async function POST(req: NextRequest) {
           conversationId: (payload as any).conversationId,
         },
       });
+      
+      if (!payment.providerCheckoutUrl) {
+        return jsonError("Stripe no devolvió URL de checkout", 502);
+      }
 
       return NextResponse.json({
         ok: true,
