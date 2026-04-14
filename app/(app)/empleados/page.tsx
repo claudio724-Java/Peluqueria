@@ -496,15 +496,19 @@ async function handleSaveSchedule() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={scheduleOpen} onOpenChange={(open) => {
-    setScheduleOpen(open);
-    if (!open) {
-      setScheduleStaff(null);
-      setScheduleRows(defaultScheduleRows);
-      setScheduleError(null);
-    }
-  }}>
-        <DialogContent className="max-w-2xl">
+      <Dialog
+        key={scheduleStaff?.id ?? "no-staff"}
+        open={scheduleOpen}
+        onOpenChange={(open) => {
+          setScheduleOpen(open);
+          if (!open) {
+            setScheduleStaff(null);
+            setScheduleRows(defaultScheduleRows);
+            setScheduleError(null);
+          }
+        }}
+      >
+        <DialogContent  key={scheduleStaff?.id ?? "no-staff"} className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Horario de {scheduleStaff?.name || "empleado"}</DialogTitle>          </DialogHeader>
           <div className="space-y-4">
