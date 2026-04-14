@@ -87,32 +87,6 @@ export async function PUT(req: Request, { params }: Params) {
     dayOfWeek: normalizeDayOfWeek(s.dayOfWeek),
   }));
 
-  for (const s of normalizedSchedules) {
-    if (
-      typeof s.dayOfWeek !== "number" ||
-      typeof s.startMin !== "number" ||
-      typeof s.endMin !== "number"
-    ) {
-      return NextResponse.json({ error: "Invalid schedule payload" }, { status: 400 });
-    }
-
-    if (s.dayOfWeek < 0 || s.dayOfWeek > 6) {
-      return NextResponse.json({ error: "dayOfWeek must be between 0 and 6" }, { status: 400 });
-    }
-
-    if (s.startMin < 0 || s.endMin > 1440 || s.startMin >= s.endMin) {
-      return NextResponse.json({ error: "Invalid time range" }, { status: 400 });
-    }
-  }
-
-  const seenDays = new Set<number>();
-  for (const s of normalizedSchedules) {
-    if (seenDays.has(s.dayOfWeek)) {
-      return NextResponse.json({ error: "Solo se permite un horario por día." }, { status: 400 });
-    }
-    seenDays.add(s.dayOfWeek);
-  }
-
   await prisma.staffSchedule.deleteMany({
     where: { staffId: staff.id },
   });
