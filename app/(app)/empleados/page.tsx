@@ -112,6 +112,7 @@ export default function EmpleadosPage() {
   const [form, setForm] = useState(emptyForm);
   const [selected, setSelected] = useState<Staff | null>(null);
   const [scheduleRows, setScheduleRows] = useState<ScheduleRow[]>(defaultScheduleRows);
+  const [scheduleStaff, setScheduleStaff] = useState<Staff | null>(null);
 
   const scheduleSummary = useMemo(() => {
     const enabled = scheduleRows.filter((row) => row.enabled);
@@ -170,30 +171,41 @@ export default function EmpleadosPage() {
   }
 
   async function openSchedule(item: Staff) {
-    if (!isOwner) return;
-    setSelected(item);
-    setScheduleOpen(true);
-    setScheduleError(null);
-    setLoadingSchedule(true);
-    try {
-      const data = await apiGet<{
-        ok: true;
-        staff?: {
-          id: string;
-          name: string;
-          schedules: { dayOfWeek: number; startMin: number; endMin: number }[];
-        };
-        schedules?: { dayOfWeek: number; startMin: number; endMin: number }[];
-      }>(`/api/staff/${item.id}/schedule`);
+  if (!isOwner) return;
+
+  setScheduleStaff(item);
+  setScheduleOpen(true);
+  setScheduleError(null);
+  setLoadingSchedule(true);
+  setScheduleRows(defaultScheduleRows);
+
+  try {
+    const data = await apiGet<{
+      ok: true;
+      staff?: {
+        id: string;
+        name: string;
+        schedules: { dayOfWeek: number; startMin: number; endMin: number }[];
+      };
+      schedules?: { dayOfWeek: number; startMin: number; endMin: number }[];
+    }>(`/api/staff/${item.id}/schedule`);
+
+    const loadedStaffId = data.staff?.id ?? item.id;
+
+    setScheduleStaff((current) => {
+      if (!current || current.id !== loadedStaffId) return current;
+
       const schedules = data.staff?.schedules ?? data.schedules ?? [];
       setScheduleRows(buildScheduleRows(schedules));
-    } catch {
-      setScheduleError("No se pudo cargar el horario del empleado.");
-      setScheduleRows(defaultScheduleRows);
-    } finally {
-      setLoadingSchedule(false);
-    }
+      return current;
+    });
+  } catch {
+    setScheduleError("No se pudo cargar el horario del empleado.");
+    setScheduleRows(defaultScheduleRows);
+  } finally {
+    setLoadingSchedule(false);
   }
+}
 
   async function handleCreate(e: FormEvent) {
     e.preventDefault();
@@ -477,7 +489,14 @@ export default function EmpleadosPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={scheduleOpen} onOpenChange={setScheduleOpen}>
+      <Dialog open={scheduleOpen} onOpenChange={(open) => {
+    setScheduleOpen(open);
+    if (!open) {
+      setScheduleStaff(null);
+      setScheduleRows(defaultScheduleRows);
+      setScheduleError(null);
+    }
+  }}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Horario de {selected?.name || "empleado"}</DialogTitle>
