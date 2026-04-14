@@ -51,6 +51,7 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
 }
 
 export async function PUT(req: Request, { params }: { params: { id: string } }) {
+  console.log("PUT PARAMS ID:", params.id);
   const session = await getServerSession(authOptions);
 
   if (!session?.user || session.user.role !== "OWNER" || !session.user.salonId) {
@@ -61,12 +62,19 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
   const schedules = Array.isArray(body?.schedules) ? body.schedules : [];
 
   const staff = await prisma.staff.findFirst({
-    where: {
-      id: params.id,
-      salonId: session.user.salonId,
-    },
-    select: { id: true },
-  });
+  where: {
+    id: params.id,
+    salonId: session.user.salonId,
+  },
+  select: {
+    id: true,
+    name: true,
+  },
+});
+  console.log("PUT STAFF FOUND:", {
+  id: staff?.id,
+  name: staff?.name,
+});
 
   if (!staff) {
     return NextResponse.json({ error: "Staff not found" }, { status: 404 });

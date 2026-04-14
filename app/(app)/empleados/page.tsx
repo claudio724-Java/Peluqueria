@@ -303,6 +303,13 @@ async function handleSaveSchedule() {
         startMin: timeToMin(row.start),
         endMin: timeToMin(row.end),
       }));
+    console.log("SAVE CLICK", {
+      scheduleStaffName: scheduleStaff?.name,
+      scheduleStaffId: scheduleStaff?.id,
+    });
+
+    const url = `/api/staff/${scheduleStaff.id}/schedule`;
+    console.log("SAVE URL", url);
 
     const res = await fetch(`/api/staff/${scheduleStaff.id}/schedule`, {
       method: "PUT",
