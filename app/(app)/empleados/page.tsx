@@ -496,98 +496,110 @@ async function handleSaveSchedule() {
         </DialogContent>
       </Dialog>
 
-      <Dialog
-        key={scheduleStaff?.id ?? "no-staff"}
-        open={scheduleOpen}
-        onOpenChange={(open) => {
-          setScheduleOpen(open);
-          if (!open) {
-            setScheduleStaff(null);
-            setScheduleRows(defaultScheduleRows);
-            setScheduleError(null);
-          }
-        }}
-      >
-        <DialogContent  key={scheduleStaff?.id ?? "no-staff"} className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Horario de {scheduleStaff?.name || "empleado"}</DialogTitle>          </DialogHeader>
-          <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              Solo los usuarios owner pueden editar el horario individual del personal. Estos bloques se usan para calcular la disponibilidad.
-            </p>
+<Dialog
+  key={scheduleStaff?.id ?? "no-staff"}
+  open={scheduleOpen}
+  onOpenChange={(open) => {
+    setScheduleOpen(open);
+    if (!open) {
+      setScheduleStaff(null);
+      setScheduleRows(defaultScheduleRows);
+      setScheduleError(null);
+    }
+  }}
+>
+  <DialogContent
+    key={scheduleStaff?.id ?? "no-staff"}
+    className="max-w-2xl"
+  >
+    <DialogHeader>
+      <DialogTitle>Horario de {scheduleStaff?.name || "empleado"}</DialogTitle>
+    </DialogHeader>
 
-            {loadingSchedule ? (
-              <p className="text-sm text-muted-foreground">Cargando horario...</p>
-            ) : (
-              <div className="space-y-3">
-                {scheduleRows.map((row, index) => (
-                  <div key={row.dayOfWeek} className="grid grid-cols-[120px_90px_1fr_1fr] items-center gap-3 rounded-md border p-3">
-                    <div className="font-medium">{dayLabels[row.dayOfWeek]}</div>
-                    <div className="flex items-center gap-2">
-                      <Switch
-                        checked={row.enabled}
-                        onCheckedChange={(checked) =>
-                          setScheduleRows((prev) =>
-                            prev.map((item, itemIndex) =>
-                              itemIndex === index ? { ...item, enabled: checked } : item
-                            )
-                          )
-                        }
-                      />
-                      <span className="text-sm text-muted-foreground">{row.enabled ? "Abierto" : "Libre"}</span>
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor={`start-${row.dayOfWeek}`}>Inicio</Label>
-                      <Input
-                        id={`start-${row.dayOfWeek}`}
-                        type="time"
-                        value={row.start}
-                        disabled={!row.enabled}
-                        onChange={(e) =>
-                          setScheduleRows((prev) =>
-                            prev.map((item, itemIndex) =>
-                              itemIndex === index ? { ...item, start: e.target.value } : item
-                            )
-                          )
-                        }
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor={`end-${row.dayOfWeek}`}>Fin</Label>
-                      <Input
-                        id={`end-${row.dayOfWeek}`}
-                        type="time"
-                        value={row.end}
-                        disabled={!row.enabled}
-                        onChange={(e) =>
-                          setScheduleRows((prev) =>
-                            prev.map((item, itemIndex) =>
-                              itemIndex === index ? { ...item, end: e.target.value } : item
-                            )
-                          )
-                        }
-                      />
-                    </div>
-                  </div>
-                ))}
+    <div className="space-y-4">
+      <p className="text-sm text-muted-foreground">
+        Solo los usuarios owner pueden editar el horario individual del personal. Estos bloques se usan para calcular la disponibilidad.
+      </p>
+
+      {loadingSchedule ? (
+        <p className="text-sm text-muted-foreground">Cargando horario...</p>
+      ) : (
+        <div className="space-y-3">
+          {scheduleRows.map((row, index) => (
+            <div
+              key={row.dayOfWeek}
+              className="grid grid-cols-[120px_90px_1fr_1fr] items-center gap-3 rounded-md border p-3"
+            >
+              <div className="font-medium">{dayLabels[row.dayOfWeek]}</div>
+              <div className="flex items-center gap-2">
+                <Switch
+                  checked={row.enabled}
+                  onCheckedChange={(checked) =>
+                    setScheduleRows((prev) =>
+                      prev.map((item, itemIndex) =>
+                        itemIndex === index ? { ...item, enabled: checked } : item
+                      )
+                    )
+                  }
+                />
+                <span className="text-sm text-muted-foreground">
+                  {row.enabled ? "Abierto" : "Libre"}
+                </span>
               </div>
-            )}
-
-            <div className="rounded-md bg-muted/50 p-3 text-sm text-muted-foreground">
-              Resumen: {scheduleSummary}
+              <div className="space-y-2">
+                <Label htmlFor={`start-${row.dayOfWeek}`}>Inicio</Label>
+                <Input
+                  id={`start-${row.dayOfWeek}`}
+                  type="time"
+                  value={row.start}
+                  disabled={!row.enabled}
+                  onChange={(e) =>
+                    setScheduleRows((prev) =>
+                      prev.map((item, itemIndex) =>
+                        itemIndex === index ? { ...item, start: e.target.value } : item
+                      )
+                    )
+                  }
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor={`end-${row.dayOfWeek}`}>Fin</Label>
+                <Input
+                  id={`end-${row.dayOfWeek}`}
+                  type="time"
+                  value={row.end}
+                  disabled={!row.enabled}
+                  onChange={(e) =>
+                    setScheduleRows((prev) =>
+                      prev.map((item, itemIndex) =>
+                        itemIndex === index ? { ...item, end: e.target.value } : item
+                      )
+                    )
+                  }
+                />
+              </div>
             </div>
+          ))}
+        </div>
+      )}
 
-            {scheduleError ? <p className="text-sm text-red-600">{scheduleError}</p> : null}
+      <div className="rounded-md bg-muted/50 p-3 text-sm text-muted-foreground">
+        Resumen: {scheduleSummary}
+      </div>
 
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setScheduleOpen(false)}>Cancelar</Button>
-              <Button type="button" onClick={handleSaveSchedule} disabled={savingSchedule || loadingSchedule}>
-                {savingSchedule ? "Guardando..." : "Guardar horario"}
-              </Button>
-            </DialogFooter>
-          </div>
-        </DialogContent>
-      </Dialog>
+      {scheduleError ? <p className="text-sm text-red-600">{scheduleError}</p> : null}
+
+      <DialogFooter>
+        <Button type="button" variant="outline" onClick={() => setScheduleOpen(false)}>
+          Cancelar
+        </Button>
+        <Button type="button" onClick={handleSaveSchedule} disabled={savingSchedule || loadingSchedule}>
+          {savingSchedule ? "Guardando..." : "Guardar horario"}
+        </Button>
+      </DialogFooter>
+    </div>
+  </DialogContent>
+</Dialog>
     </div>
   );
 }
