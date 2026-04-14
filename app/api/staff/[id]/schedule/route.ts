@@ -3,21 +3,27 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 
+type Params = {
+  params: Promise<{ id: string }>;
+};
+
 function normalizeDayOfWeek(value: number) {
   if (value >= 0 && value <= 6) return value;
   if (value === 7) return 0;
   return value;
 }
 
-export async function GET(_req: Request, { params }: { params: { id: string } }) {
+export async function GET(_req: Request, { params }: Params) {
   const session = await getServerSession(authOptions);
   if (!session?.user || session.user.role !== "OWNER" || !session.user.salonId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
   }
 
+  const { id } = await params;
+
   const staff = await prisma.staff.findFirst({
     where: {
-      id: params.id,
+      id,
       salonId: session.user.salonId,
     },
     select: {
@@ -50,31 +56,27 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
   });
 }
 
-export async function PUT(req: Request, { params }: { params: { id: string } }) {
-  console.log("PUT PARAMS ID:", params.id);
+export async function PUT(req: Request, { params }: Params) {
   const session = await getServerSession(authOptions);
 
   if (!session?.user || session.user.role !== "OWNER" || !session.user.salonId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
   }
 
+  const { id } = await params;
   const body = await req.json();
   const schedules = Array.isArray(body?.schedules) ? body.schedules : [];
 
   const staff = await prisma.staff.findFirst({
-  where: {
-    id: params.id,
-    salonId: session.user.salonId,
-  },
-  select: {
-    id: true,
-    name: true,
-  },
-});
-  console.log("PUT STAFF FOUND:", {
-  id: staff?.id,
-  name: staff?.name,
-});
+    where: {
+      id,
+      salonId: session.user.salonId,
+    },
+    select: {
+      id: true,
+      name: true,
+    },
+  });
 
   if (!staff) {
     return NextResponse.json({ error: "Staff not found" }, { status: 404 });
