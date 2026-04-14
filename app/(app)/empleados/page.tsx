@@ -190,10 +190,10 @@ export default function EmpleadosPage() {
       schedules?: { dayOfWeek: number; startMin: number; endMin: number }[];
     }>(`/api/staff/${item.id}/schedule`);
 
-    const loadedStaffId = data.staff?.id ?? item.id;
+    const loadedId = data.staff?.id ?? item.id;
 
     setScheduleStaff((current) => {
-      if (!current || current.id !== loadedStaffId) return current;
+      if (!current || current.id !== loadedId) return current;
 
       const schedules = data.staff?.schedules ?? data.schedules ?? [];
       setScheduleRows(buildScheduleRows(schedules));
@@ -278,45 +278,52 @@ export default function EmpleadosPage() {
     }
   }
 
-  async function handleSaveSchedule() {
-    if (!selected) return;
-    setScheduleError(null);
+async function handleSaveSchedule() {
+  if (!scheduleStaff) return;
+  setScheduleError(null);
 
-    const invalid = scheduleRows.find((row) => row.enabled && timeToMin(row.start) >= timeToMin(row.end));
-    if (invalid) {
-      setScheduleError(`Revisa ${dayLabels[invalid.dayOfWeek]}: la hora de inicio debe ser menor que la de fin.`);
-      return;
-    }
+  const invalid = scheduleRows.find(
+    (row) => row.enabled && timeToMin(row.start) >= timeToMin(row.end)
+  );
 
-    try {
-      setSavingSchedule(true);
-      const schedules = scheduleRows
-        .filter((row) => row.enabled)
-        .map((row) => ({
-          dayOfWeek: row.dayOfWeek,
-          startMin: timeToMin(row.start),
-          endMin: timeToMin(row.end),
-        }));
-
-      const res = await fetch(`/api/staff/${selected.id}/schedule`, {
-        method: "PUT",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ schedules }),
-      });
-
-      if (!res.ok) {
-        throw new Error("PUT failed");
-      }
-
-      setScheduleOpen(false);
-      setSelected(null);
-    } catch {
-      setScheduleError("No se pudo guardar el horario del empleado.");
-    } finally {
-      setSavingSchedule(false);
-    }
+  if (invalid) {
+    setScheduleError(
+      `Revisa ${dayLabels[invalid.dayOfWeek]}: la hora de inicio debe ser menor que la de fin.`
+    );
+    return;
   }
+
+  try {
+    setSavingSchedule(true);
+
+    const schedules = scheduleRows
+      .filter((row) => row.enabled)
+      .map((row) => ({
+        dayOfWeek: row.dayOfWeek,
+        startMin: timeToMin(row.start),
+        endMin: timeToMin(row.end),
+      }));
+
+    const res = await fetch(`/api/staff/${scheduleStaff.id}/schedule`, {
+      method: "PUT",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ schedules }),
+    });
+
+    if (!res.ok) {
+      throw new Error("PUT failed");
+    }
+
+    setScheduleOpen(false);
+    setScheduleStaff(null);
+    setScheduleRows(defaultScheduleRows);
+  } catch {
+    setScheduleError("No se pudo guardar el horario del empleado.");
+  } finally {
+    setSavingSchedule(false);
+  }
+}
 
   return (
     <div className="space-y-6 p-6">
@@ -499,8 +506,7 @@ export default function EmpleadosPage() {
   }}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Horario de {selected?.name || "empleado"}</DialogTitle>
-          </DialogHeader>
+            <DialogTitle>Horario de {scheduleStaff?.name || "empleado"}</DialogTitle>          </DialogHeader>
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
               Solo los usuarios owner pueden editar el horario individual del personal. Estos bloques se usan para calcular la disponibilidad.
