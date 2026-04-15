@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { fromZonedTime, toZonedTime } from "date-fns-tz";
+import { fromZonedTime } from "date-fns-tz";
 
 export async function getAvailability(params: {
   salonId: string;
@@ -27,7 +27,6 @@ export async function getAvailability(params: {
   const totalDurationMin = service.durationMin + (service.bufferMin ?? 0);
   const stepMin = salon.slotIntervalMin ?? 30;
 
-  // 🔥 FIX ZONA HORARIA
   const [y, m, d] = date.split("-").map(Number);
   const jsDay = new Date(y, m - 1, d).getDay();
   const dayOfWeek = jsDay === 0 ? 7 : jsDay;
@@ -60,21 +59,24 @@ export async function getAvailability(params: {
 
   if (!schedules.length) return [];
 
-  const slots: any[] = [];
+  const slots: string[] = [];
 
   for (const s of schedules) {
     for (let t = s.startMin; t + totalDurationMin <= s.endMin; t += stepMin) {
+      const insideSalonWindow = salonWindows.some(
+        (w) => t >= w.startMin && t + totalDurationMin <= w.endMin
+      );
+
+      if (!insideSalonWindow) continue;
+
       const h = Math.floor(t / 60)
         .toString()
         .padStart(2, "0");
-      const m = (t % 60).toString().padStart(2, "0");
+      const min = (t % 60).toString().padStart(2, "0");
 
-      const startUtc = fromZonedTime(`${date} ${h}:${m}:00`, timezone);
+      const startUtc = fromZonedTime(`${date} ${h}:${min}:00`, timezone);
 
-      slots.push({
-        staffId: s.staffId,
-        startAt: startUtc.toISOString(),
-      });
+      slots.push(startUtc.toISOString());
     }
   }
 

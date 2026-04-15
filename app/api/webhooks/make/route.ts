@@ -4,7 +4,7 @@ import { getAvailability } from "@/lib/availability";
 import { prisma } from "@/lib/prisma";
 import { createPaymentLink } from "@/lib/payments/service";
 import { buildSalonDataPayload } from "@/lib/salon-data-webhook";
-import { DateTime } from "luxon"; // ✅ IMPORTANTE
+import { DateTime } from "luxon";
 
 function jsonError(message: string, status = 400, details?: unknown) {
   return NextResponse.json({ ok: false, error: message, details }, { status });
@@ -42,32 +42,41 @@ export async function POST(req: NextRequest) {
   const intent = (payload as any).intent as string | undefined;
   if (!intent) return jsonError("Missing intent", 400);
 
-  // ===============================
-  // 🟢 CHECK AVAILABILITY
-  // ===============================
   if (intent === "check_availability") {
-    const salonId = (payload as any).salonId;
-    const serviceId = (payload as any).serviceId;
-    const staffId = (payload as any).staffId;
-    const date = (payload as any).date;
+    try {
+      const salonId = (payload as any).salonId;
+      const serviceId = (payload as any).serviceId;
+      const staffId = (payload as any).staffId;
+      const date = (payload as any).date;
 
-    if (!salonId || !serviceId || !date) {
-      return jsonError("salonId, serviceId and date are required", 400);
+      if (!salonId || !serviceId || !date) {
+        return jsonError("salonId, serviceId and date are required", 400);
+      }
+
+      const slots = await getAvailability({ salonId, serviceId, staffId, date });
+
+      if (!Array.isArray(slots)) {
+        return jsonError("getAvailability did not return an array", 500, { slots });
+      }
+
+      const cleanSlots = slots.map((s: string) =>
+        String(s).replace("Z", "").substring(0, 19)
+      );
+
+      return NextResponse.json({ ok: true, intent, slots: cleanSlots });
+    } catch (error) {
+      console.error("check_availability error:", error);
+
+      return jsonError(
+        error instanceof Error ? error.message : "Internal error in check_availability",
+        500,
+        error instanceof Error
+          ? { name: error.name, stack: error.stack }
+          : error
+      );
     }
-
-    const slots = await getAvailability({ salonId, serviceId, staffId, date });
-
-    // ⚠️ NORMALIZAR FORMATO (sin Z)
-    const cleanSlots = slots.map((s: string) =>
-      s.replace("Z", "").substring(0, 19)
-    );
-
-    return NextResponse.json({ ok: true, intent, slots: cleanSlots });
   }
 
-  // ===============================
-  // 🔴 CREATE APPOINTMENT (FIX TIMEZONE)
-  // ===============================
   if (intent === "create_appointment") {
     const { salonId, serviceId, staffId, customer } = payload as any;
 
@@ -75,7 +84,6 @@ export async function POST(req: NextRequest) {
       return jsonError("Missing fields for create_appointment", 400);
     }
 
-    // ✅ USAR timezone correctamente
     const zone = (payload as any).timeZone || "Atlantic/Canary";
 
     const dt = DateTime.fromISO(
@@ -87,7 +95,7 @@ export async function POST(req: NextRequest) {
       return jsonError("Invalid date/time format", 400);
     }
 
-    const start = new Date(dt.toUTC().toISO());
+    const start = new Date(dt.toUTC().toISO()!);
 
     const service = await prisma.service.findFirst({
       where: { id: serviceId, salonId, isActive: true },
@@ -95,8 +103,7 @@ export async function POST(req: NextRequest) {
     if (!service) return jsonError("Service not found", 404);
 
     const end = new Date(
-      start.getTime() +
-        (service.durationMin + (service.bufferMin ?? 0)) * 60 * 1000
+      start.getTime() + (service.durationMin + (service.bufferMin ?? 0)) * 60 * 1000
     );
 
     const staff = await prisma.staff.findFirst({
@@ -164,9 +171,6 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  // ===============================
-  // ❌ CANCEL
-  // ===============================
   if (intent === "cancel_appointment") {
     const appointmentId = (payload as any).appointmentId;
     const reason = (payload as any).reason;
@@ -192,9 +196,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, intent, appointmentId });
   }
 
-  // ===============================
-  // 💳 PAYMENT
-  // ===============================
   if (intent === "create_payment_link") {
     try {
       const payment = await createPaymentLink({
@@ -211,7 +212,7 @@ export async function POST(req: NextRequest) {
           conversationId: (payload as any).conversationId,
         },
       });
-      
+
       if (!payment.providerCheckoutUrl) {
         return jsonError("Stripe no devolvió URL de checkout", 502);
       }
@@ -235,9 +236,6 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // ===============================
-  // 🏪 SALON DATA
-  // ===============================
   if (intent === "get_salon_data") {
     const salonId = (payload as any).salonId;
 
