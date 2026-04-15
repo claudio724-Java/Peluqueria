@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { fromZonedTime } from "date-fns-tz";
+import { fromZonedTime, toZonedTime, formatInTimeZone } from "date-fns-tz";
 
 export async function getAvailability(params: {
   salonId: string;
@@ -59,26 +59,72 @@ export async function getAvailability(params: {
 
   if (!schedules.length) return [];
 
-  const slots: string[] = [];
+  // Día completo en UTC, partiendo del día local del salón
+  const dayStartUtc = fromZonedTime(`${date} 00:00:00`, timezone);
+  const dayEndUtc = fromZonedTime(`${date} 23:59:59`, timezone);
 
-  for (const s of schedules) {
-    for (let t = s.startMin; t + totalDurationMin <= s.endMin; t += stepMin) {
+  const appointments = await prisma.appointment.findMany({
+    where: {
+      salonId,
+      staffId: { in: staffIds },
+      status: { in: ["PENDING", "CONFIRMED"] },
+      startAt: { lt: dayEndUtc },
+      endAt: { gt: dayStartUtc },
+    },
+    select: {
+      staffId: true,
+      startAt: true,
+      endAt: true,
+    },
+  });
+
+  const slots: string[] = [];
+  const seen = new Set<string>();
+
+  for (const schedule of schedules) {
+    for (
+      let t = schedule.startMin;
+      t + totalDurationMin <= schedule.endMin;
+      t += stepMin
+    ) {
       const insideSalonWindow = salonWindows.some(
         (w) => t >= w.startMin && t + totalDurationMin <= w.endMin
       );
 
       if (!insideSalonWindow) continue;
 
-      const h = Math.floor(t / 60)
-        .toString()
-        .padStart(2, "0");
-      const min = (t % 60).toString().padStart(2, "0");
+      const hh = Math.floor(t / 60).toString().padStart(2, "0");
+      const mm = (t % 60).toString().padStart(2, "0");
 
-      const startUtc = fromZonedTime(`${date} ${h}:${min}:00`, timezone);
+      // Hora local del salón -> UTC real
+      const slotStartUtc = fromZonedTime(`${date} ${hh}:${mm}:00`, timezone);
+      const slotEndUtc = new Date(
+        slotStartUtc.getTime() + totalDurationMin * 60 * 1000
+      );
 
-      slots.push(startUtc.toISOString());
+      const hasConflict = appointments.some((appt) => {
+        return (
+          appt.staffId === schedule.staffId &&
+          appt.startAt < slotEndUtc &&
+          appt.endAt > slotStartUtc
+        );
+      });
+
+      if (hasConflict) continue;
+
+      // Devolver SIEMPRE en hora local del salón
+      const localIso = formatInTimeZone(
+        slotStartUtc,
+        timezone,
+        "yyyy-MM-dd'T'HH:mm:ss"
+      );
+
+      if (!seen.has(localIso)) {
+        seen.add(localIso);
+        slots.push(localIso);
+      }
     }
   }
 
-  return slots;
+  return slots.sort();
 }
